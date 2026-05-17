@@ -84,14 +84,19 @@ public:
 	void setModRegion(uint32_t pos = 0xFFFFFFFF, uint32_t length = 0, int32_t noteRowId = 0);
 	void notifyParamAutomationOccurred(ParamManager* paramManager, bool updateModLevels = true);
 	void displayAutomation();
-	void displayOutputName(Output* output, bool doBlink = true, Clip* clip = NULL);
+	// EKLEN - display clip length
+	// added "bool showClipLength = false"
+	void displayOutputName(Output* output, bool doBlink = true, Clip* clip = NULL, bool showClipLength = false);
 	void instrumentChanged(ModelStackWithTimelineCounter* modelStack, Instrument* newInstrument);
 	void navigateThroughPresetsForInstrumentClip(int32_t offset, ModelStackWithTimelineCounter* modelStack,
 	                                             bool doBlink = false);
 	void navigateThroughAudioOutputsForAudioClip(int32_t offset, AudioClip* clip, bool doBlink = false);
 	bool changeOutputType(OutputType newOutputType, ModelStackWithTimelineCounter* modelStack, bool doBlink = false);
+	// EKLEN - display clip length
+	// added "bool showClipLength = false"
 	void drawOutputNameFromDetails(OutputType outputType, int32_t slot, int32_t subSlot, char const* name,
-	                               bool isNameEmpty, bool editedByUser, bool doBlink, Clip* clip = NULL);
+	                               bool isNameEmpty, bool editedByUser, bool doBlink, Clip* clip = NULL,
+	                               bool showClipLength = false);
 	void endMIDILearn();
 	[[nodiscard]] RGB getClipMuteSquareColour(Clip* clip, RGB thisColour, bool allowMIDIFlash = true);
 	ActionResult clipStatusPadAction(Clip* clip, bool on, int32_t yDisplayIfInSessionView = -1);

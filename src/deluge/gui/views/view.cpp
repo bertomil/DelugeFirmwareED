@@ -83,11 +83,73 @@
 #include "storage/file_item.h"
 #include "storage/flash_storage.h"
 #include "storage/storage_manager.h"
+#include "util/d_string.h"
 
 namespace params = deluge::modulation::params;
 namespace encoders = deluge::hid::encoders;
 using namespace deluge;
 using namespace gui;
+
+namespace {
+void appendMIDIParamNumber(StringBuf& buffer, int32_t paramID) {
+	buffer.append("CC");
+	if (display->haveOLED()) {
+		buffer.append(" ");
+	}
+	buffer.appendInt(paramID, display->haveOLED() ? 1 : 3);
+}
+
+// EKLEN - MIDI CC names display before values
+const char* getNamedMIDIParamForDisplay(int32_t paramID) {
+	switch (paramID) {
+	case CC_NUMBER_PITCH_BEND:
+		return l10n::get(l10n::String::STRING_FOR_PITCH_BEND);
+	case CC_NUMBER_AFTERTOUCH:
+		return l10n::get(l10n::String::STRING_FOR_CHANNEL_PRESSURE);
+	case CC_EXTERNAL_MOD_WHEEL:
+	case CC_NUMBER_Y_AXIS:
+		return l10n::get(l10n::String::STRING_FOR_MOD_WHEEL);
+	case 7:
+		return display->haveOLED() ? "Volume" : "VOL";
+	case 71:
+		return display->haveOLED() ? "LPF Resonance" : "RESO";
+	case 74:
+		return display->haveOLED() ? "LPF Cutoff" : "FREQ";
+	case 91:
+		return display->haveOLED() ? "Reverb" : "VERB";
+	case 93:
+		return display->haveOLED() ? "Delay" : "DLY";
+	default:
+		return nullptr;
+	}
+}
+
+void appendMIDIParamName(StringBuf& buffer, int32_t paramID) {
+    const char* name = getNamedMIDIParamForDisplay(paramID);
+    if (name) {
+        buffer.append(name);
+        return;
+    }
+    appendMIDIParamNumber(buffer, paramID);
+}
+
+
+bool appendExpressionParamName(StringBuf& buffer, int32_t paramID) {
+	switch (paramID) {
+	case X_PITCH_BEND:
+		appendMIDIParamName(buffer, CC_NUMBER_PITCH_BEND);
+		return true;
+	case Y_SLIDE_TIMBRE:
+		appendMIDIParamName(buffer, CC_NUMBER_Y_AXIS);
+		return true;
+	case Z_PRESSURE:
+		appendMIDIParamName(buffer, CC_NUMBER_AFTERTOUCH);
+		return true;
+	default:
+		return false;
+	}
+}
+} // namespace
 
 View view{};
 
@@ -1061,7 +1123,21 @@ void View::displayModEncoderValuePopup(params::Kind kind, int32_t paramID, int32
 				popupMsg.append(name);
 				popupMsg.append(": ");
 			}
+			else if (kind == params::Kind::MIDI) {
+				appendMIDIParamName(popupMsg, paramID);
+				popupMsg.append(": ");
+			}
+			else if (kind == params::Kind::EXPRESSION && appendExpressionParamName(popupMsg, paramID)) {
+				popupMsg.append(": ");
+			}
 		}
+	}
+	else if (kind == params::Kind::MIDI) {
+		appendMIDIParamName(popupMsg, paramID);
+		popupMsg.append(" ");
+	}
+	else if (kind == params::Kind::EXPRESSION && appendExpressionParamName(popupMsg, paramID)) {
+		popupMsg.append(" ");
 	}
 
 	// if turning stutter mod encoder and stutter quantize is enabled
@@ -1849,7 +1925,9 @@ char const* View::getReverbPresetDisplayName(int32_t preset) {
 	return deluge::l10n::get(presetReverbNames[preset]);
 }
 
-void View::displayOutputName(Output* output, bool doBlink, Clip* clip) {
+// EKLEN - display clip length
+// added "bool showClipLength"
+void View::displayOutputName(Output* output, bool doBlink, Clip* clip, bool showClipLength) {
 	int32_t channel, channelSuffix;
 	bool editedByUser = true;
 	if (output->type != OutputType::AUDIO) {
@@ -1865,14 +1943,18 @@ void View::displayOutputName(Output* output, bool doBlink, Clip* clip) {
 			break;
 		}
 	}
-
+	// EKLEN - display clip length
+	// added "showClipLength"
 	drawOutputNameFromDetails(output->type, channel, channelSuffix, output->name.get(), output->name.isEmpty(),
-	                          editedByUser, doBlink, clip);
+	                          editedByUser, doBlink, clip, showClipLength);
 	deluge::hid::display::OLED::markChanged();
 }
 
+// EKLEN - display clip length
+// added "bool showClipLength"
 void View::drawOutputNameFromDetails(OutputType outputType, int32_t channel, int32_t channelSuffix, char const* name,
-                                     bool isNameEmpty, bool editedByUser, bool doBlink, Clip* clip) {
+                                     bool isNameEmpty, bool editedByUser, bool doBlink, Clip* clip,
+                                     bool showClipLength) {
 	if (doBlink) {
 		using namespace indicator_leds;
 		LED led;
@@ -1912,14 +1994,16 @@ void View::drawOutputNameFromDetails(OutputType outputType, int32_t channel, int
 			blinkLed(led);
 		}
 
-		InstrumentClip* clip = NULL;
+		InstrumentClip* instrumentClip = NULL;
 		if (clip && clip->type == ClipType::INSTRUMENT) {
-			clip = (InstrumentClip*)clip;
+			instrumentClip = (InstrumentClip*)clip;
 		}
-
-		setLedState(LED::KEYBOARD, (clip && clip->onKeyboardScreen));
-		setLedState(LED::SCALE_MODE, (clip && clip->inScaleMode && clip->output->type != OutputType::KIT));
-		setLedState(LED::CROSS_SCREEN_EDIT, (clip && clip->wrapEditing));
+		// EKLEN - bug fix
+		// "clip" renamed to "instrumentClip" in the if statement above to avoid confusion with the "clip" parameter of this function
+		setLedState(LED::KEYBOARD, (instrumentClip && instrumentClip->onKeyboardScreen));
+		setLedState(LED::SCALE_MODE,
+		            (instrumentClip && instrumentClip->inScaleMode && instrumentClip->output->type != OutputType::KIT));
+		setLedState(LED::CROSS_SCREEN_EDIT, (instrumentClip && instrumentClip->wrapEditing));
 	}
 
 	// hook to render display for OLED and 7SEG when in Automation View
@@ -1938,6 +2022,22 @@ void View::drawOutputNameFromDetails(OutputType outputType, int32_t channel, int
 		hid::display::OLED::clearMainImage();
 
 		char const* outputTypeText = getOutputTypeName(outputType, channel);
+		// EKLEN start - display clip length
+		DEF_STACK_STRING_BUF(outputTypeWithLength, 20);
+		if (showClipLength && clip && clip->type == ClipType::INSTRUMENT
+		    && (outputType == OutputType::SYNTH || outputType == OutputType::KIT || outputType == OutputType::MIDI_OUT
+		        || outputType == OutputType::CV)) {
+			uint32_t barLength = currentSong->getBarLength();
+			if (barLength) {
+				int32_t totalBars = static_cast<int32_t>((clip->loopLength + barLength - 1) / barLength);
+				outputTypeWithLength.append(outputTypeText);
+				outputTypeWithLength.append(" (");
+				outputTypeWithLength.appendInt(totalBars);
+				outputTypeWithLength.append(" Bars)");
+				outputTypeText = outputTypeWithLength.c_str();
+			}
+		}
+		// EKLEN end
 
 #if OLED_MAIN_HEIGHT_PIXELS == 64
 		int32_t yPos = OLED_MAIN_TOPMOST_PIXEL + 12;

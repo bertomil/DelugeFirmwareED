@@ -777,18 +777,24 @@ void PlaybackHandler::scheduleMIDIClockOutTickParamsKnown(uint32_t midiClockOutT
 	}
 }
 
+// EKLEN - Fix MIDI clock with flushing
 void PlaybackHandler::doMIDIClockOutTick() {
-	// we need to flush the buffer in case there's a clock in it, otherwise both will be sent at once
+
 	if (midiEngine.anythingInOutputBuffer()) {
 		midiEngine.flushMIDI();
 	}
+
 	midiClockOutTickScheduled = false;
 	lastMIDIClockOutTickDone++;
+
 	if (skipMidiClocks) {
 		skipMidiClocks--;
 	}
 	else {
 		midiEngine.sendClock(this, true);
+
+		// Do not allow the freshly generated F8 to wait in the general MIDI output buffer
+		midiEngine.flushMIDI();
 	}
 }
 

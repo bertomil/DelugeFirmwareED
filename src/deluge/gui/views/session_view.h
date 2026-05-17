@@ -40,6 +40,11 @@ enum SessionGridMode : uint8_t {
 extern float getTransitionProgress();
 
 constexpr uint32_t kGridHeight = kDisplayHeight;
+// EKLEN - grid timeline playhead
+// Reserve the bottom physical grid row for a fixed timeline
+constexpr uint32_t kGridTimelineY = 0;
+constexpr uint32_t kGridClipHeight = kDisplayHeight - 1;
+constexpr uint32_t kGridFirstClipY = kGridTimelineY + 1;
 
 // Clip Group colours
 extern const uint8_t numDefaultClipGroupColours;
@@ -172,6 +177,8 @@ private:
 	void goToArrangementEditor();
 	void rowNeedsRenderingDependingOnSubMode(int32_t yDisplay);
 	void setCentralLEDStates();
+	// EKLEN - display playhead position
+	void displayPlayheadPosition(bool force = false);
 
 	Clip* createNewAudioClip(int32_t yDisplay);
 	Clip* createNewInstrumentClip(OutputType outputType, int32_t yDisplay);
@@ -193,6 +200,13 @@ private:
 	bool sessionButtonUsed = false;
 	bool horizontalEncoderPressed = false;
 	bool viewingRecordArmingActive = false;
+	// EKLEN - members for displaying playhead position
+	int32_t lastDisplayedPlayheadBar = -1;
+	int32_t lastDisplayedPlayheadBeat = -1;
+	int32_t lastDisplayedPlayheadTotalBars = -1;
+	uint32_t timeLastPlayheadPositionUpdate = 0;
+	bool playheadPositionVisible = false;
+
 	// Members for grid layout
 private:
 	bool gridRenderSidebar(uint32_t whichRows, RGB image[][kDisplayWidth + kSideBarWidth],
@@ -201,6 +215,12 @@ private:
 	                           uint8_t occupancyMask[][kDisplayWidth + kSideBarWidth]);
 	bool gridRenderMainPads(uint32_t whichRows, RGB image[][kDisplayWidth + kSideBarWidth],
 	                        uint8_t occupancyMask[][kDisplayWidth + kSideBarWidth], bool drawUndefinedArea = true);
+	// EKLEN - grid timeline playhead
+	void renderGridTimelineRow(RGB image[][kDisplayWidth + kSideBarWidth],
+	                           uint8_t occupancyMask[][kDisplayWidth + kSideBarWidth]);
+	void displayGridTimelinePlayhead();
+	int32_t getGridTimelineCursorX();
+	Clip* getGridTimelineReferenceClip();
 
 	RGB gridRenderClipColor(Clip* clip);
 
@@ -222,6 +242,8 @@ private:
 	int32_t gridFirstPressedY = -1;
 	int32_t gridSecondPressedX = -1;
 	int32_t gridSecondPressedY = -1;
+	// EKLEN - grid timeline playhead
+	int32_t lastGridTimelineCursorX = -1;
 	inline bool gridSecondPadInactive() { return (gridSecondPressedX == -1 && gridSecondPressedY == -1); }
 
 	inline void gridResetPresses(bool first = true, bool second = true) {

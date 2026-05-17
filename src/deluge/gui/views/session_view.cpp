@@ -801,7 +801,10 @@ startHoldingDown:
 						performActionOnPadRelease = true;
 						selectedClipTimePressed = AudioEngine::audioSampleTimer;
 						view.setActiveModControllableTimelineCounter(clip);
-						view.displayOutputName(clip->output, true, clip);
+						// EKLEN - display clip length
+						// Song View pad-hold display opts in
+						// added ", true);"
+						view.displayOutputName(clip->output, true, clip, true);
 					}
 				}
 
@@ -1855,7 +1858,9 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 
 	UI* currentUI = getCurrentUI();
 	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) {
-		view.displayOutputName(getCurrentClip()->output, true, getCurrentClip());
+		// EKLEN - display clip length
+		// added ", true);"
+		view.displayOutputName(getCurrentClip()->output, true, getCurrentClip(), true);
 	}
 	else if (currentUI != &performanceSessionView) {
 		renderViewDisplay();
@@ -2025,6 +2030,103 @@ void SessionView::renderViewDisplay() {
 	currentSong->getCurrentRootNoteAndScaleName(rootNoteAndScaleName);
 	displayCurrentRootNoteAndScaleName(canvas, rootNoteAndScaleName, false);
 
+	// EKLEN - display playhead position
+	displayPlayheadPosition(true);
+
+	deluge::hid::display::OLED::markChanged();
+}
+
+// EKLEN - display playhead position
+void SessionView::displayPlayheadPosition(bool force) {
+	constexpr int32_t kPlayheadPositionXMin = 0;
+	constexpr int32_t kPlayheadPositionXMax = 75;
+	constexpr int32_t kPlayheadPositionY = OLED_MAIN_TOPMOST_PIXEL + 3;
+	constexpr uint32_t kPlayheadPositionUpdateInterval = kSampleRate / 20; // 50ms
+
+	auto& canvas = deluge::hid::display::OLED::main;
+
+	auto resetPlayheadPositionState = [&]() {
+		playheadPositionVisible = false;
+		lastDisplayedPlayheadBar = -1;
+		lastDisplayedPlayheadBeat = -1;
+		lastDisplayedPlayheadTotalBars = -1;
+		timeLastPlayheadPositionUpdate = 0;
+	};
+
+	auto clearPlayheadPositionArea = [&]() {
+		if (playheadPositionVisible || force) {
+			canvas.clearAreaExact(kPlayheadPositionXMin, OLED_MAIN_TOPMOST_PIXEL, kPlayheadPositionXMax,
+			                      kPlayheadPositionY + kTextSpacingY);
+			deluge::hid::display::OLED::markChanged();
+		}
+		resetPlayheadPositionState();
+	};
+
+	if (getCurrentUI() != this || currentUIMode != UI_MODE_NONE) {
+		resetPlayheadPositionState();
+		return;
+	}
+
+	if (currentPlaybackMode != &session || !playbackHandler.isEitherClockActive()) {
+		clearPlayheadPositionArea();
+		return;
+	}
+
+	if (!force && playheadPositionVisible
+	    && (uint32_t)(AudioEngine::audioSampleTimer - timeLastPlayheadPositionUpdate)
+	           < kPlayheadPositionUpdateInterval) {
+		return;
+	}
+
+	timeLastPlayheadPositionUpdate = AudioEngine::audioSampleTimer;
+
+	Clip* referenceClip = nullptr;
+	for (int32_t c = 0; c < currentSong->sessionClips.getNumElements(); c++) {
+		Clip* clip = currentSong->sessionClips.getClipAtIndex(c);
+		if (currentSong->isClipActive(clip) && (!referenceClip || clip->loopLength > referenceClip->loopLength)) {
+			referenceClip = clip;
+		}
+	}
+
+	if (!referenceClip || referenceClip->loopLength == 0) {
+		clearPlayheadPositionArea();
+		return;
+	}
+
+	uint32_t barLength = currentSong->getBarLength();
+	uint32_t beatLength = currentSong->getQuarterNoteLength();
+	if (barLength == 0 || beatLength == 0) {
+		clearPlayheadPositionArea();
+		return;
+	}
+
+	uint32_t livePos = referenceClip->getClipToRecordTo()->getLivePos() % referenceClip->loopLength;
+	int32_t bar = static_cast<int32_t>(livePos / barLength) + 1;
+	int32_t beat = static_cast<int32_t>((livePos % barLength) / beatLength) + 1;
+	int32_t totalBars = static_cast<int32_t>((referenceClip->loopLength + barLength - 1) / barLength);
+
+	if (!force && playheadPositionVisible && bar == lastDisplayedPlayheadBar && beat == lastDisplayedPlayheadBeat
+	    && totalBars == lastDisplayedPlayheadTotalBars) {
+		return;
+	}
+
+	canvas.clearAreaExact(kPlayheadPositionXMin, OLED_MAIN_TOPMOST_PIXEL, kPlayheadPositionXMax,
+	                      kPlayheadPositionY + kTextSpacingY);
+
+	DEF_STACK_STRING_BUF(playheadPositionText, 20);
+	playheadPositionText.appendInt(bar);
+	playheadPositionText.append(".");
+	playheadPositionText.appendInt(beat);
+	playheadPositionText.append(" / ");
+	playheadPositionText.appendInt(totalBars);
+
+	canvas.drawString(playheadPositionText.c_str(), kPlayheadPositionXMin, kPlayheadPositionY, kTextSpacingX,
+	                  kTextSpacingY);
+
+	lastDisplayedPlayheadBar = bar;
+	lastDisplayedPlayheadBeat = beat;
+	lastDisplayedPlayheadTotalBars = totalBars;
+	playheadPositionVisible = true;
 	deluge::hid::display::OLED::markChanged();
 }
 
@@ -2157,6 +2259,8 @@ void SessionView::graphicsRoutine() {
 
 	if (display->haveOLED()) {
 		displayPotentialTempoChange(this);
+		// EKLEN - display playhead position
+		displayPlayheadPosition();
 	}
 
 	bool reallyNoTickSquare = (!playbackHandler.isEitherClockActive() || currentUIMode == UI_MODE_EXPLODE_ANIMATION
@@ -2173,6 +2277,8 @@ void SessionView::graphicsRoutine() {
 	// when the next clip launch event is expected occur (e.g. when clips will start or end)
 	if (currentSong->sessionLayout == SessionLayoutType::SessionLayoutTypeGrid) {
 		potentiallyRenderClipLaunchPlayhead(reallyNoTickSquare, sixteenthNotesRemaining);
+		// EKLEN - Display playhead position on grid pads
+		displayGridTimelinePlayhead();
 
 		return;
 	}
@@ -3094,12 +3200,20 @@ bool SessionView::gridRenderSidebar(uint32_t whichRows, RGB image[][kDisplayWidt
 			view.renderMacros(sectionColumnIndex, y, selectedMacro, image, occupancyMask);
 		}
 		else {
-			occupancyMask[y][sectionColumnIndex] = 64;
-
 			auto section = gridSectionFromY(y);
 			RGB& ptrSectionColour = image[y][sectionColumnIndex];
+			if (section < 0) {
+				// EKLEN - Display playhead position on grid pads
+				// The fixed timeline row is not a clip section.
+				occupancyMask[y][sectionColumnIndex] = 0;
+				ptrSectionColour = colours::black;
+				gridRenderActionModes(y, image, occupancyMask);
+				continue;
+			}
 
-			ptrSectionColour = RGB::fromHue(defaultClipGroupColours[gridSectionFromY(y)]);
+			occupancyMask[y][sectionColumnIndex] = 64;
+
+			ptrSectionColour = RGB::fromHue(defaultClipGroupColours[section]);
 			ptrSectionColour = ptrSectionColour.adjust(255, 2);
 
 			if (view.midiLearnFlashOn && gridModeActive == SessionGridModeLaunch) {
@@ -3143,6 +3257,12 @@ void SessionView::gridRenderActionModes(int32_t y, RGB image[][kDisplayWidth + k
 	case GridMode::BLUE: {
 		modeActive = (gridModeActive == SessionGridModeEdit);
 		modeColour = colours::blue; // Blue
+		break;
+	}
+	// EKLEN - section launch shift
+	case GridMode::WHITE: {
+		modeActive = matrixDriver.isPadPressed(kDisplayWidth + 1, WHITE);
+		modeColour = colours::white; // White
 		break;
 	}
 	case GridMode::RED: {
@@ -3206,9 +3326,78 @@ bool SessionView::gridRenderMainPads(uint32_t whichRows, RGB image[][kDisplayWid
 		}
 	}
 
+	// EKLEN - Display playhead position on grid pads
+	renderGridTimelineRow(image, occupancyMask);
+
 	PadLEDs::renderingLock = false;
 
 	return true;
+}
+
+// EKLEN - Display playhead position on grid pads
+void SessionView::renderGridTimelineRow(RGB image[][kDisplayWidth + kSideBarWidth],
+                                        uint8_t occupancyMask[][kDisplayWidth + kSideBarWidth]) {
+	int32_t cursorX = getGridTimelineCursorX();
+
+	for (int32_t xDisplay = 0; xDisplay < kDisplayWidth; xDisplay++) {
+		occupancyMask[kGridTimelineY][xDisplay] = 64;
+		image[kGridTimelineY][xDisplay] =
+		    (xDisplay == cursorX) ? colours::white_full : colours::grey;
+	}
+
+	lastGridTimelineCursorX = cursorX;
+}
+
+// EKLEN - Display playhead position on grid pads
+// Main function
+void SessionView::displayGridTimelinePlayhead() {
+	if (getCurrentUI() != this || currentSong->sessionLayout != SessionLayoutType::SessionLayoutTypeGrid
+	    || currentUIMode == UI_MODE_EXPLODE_ANIMATION || currentUIMode == UI_MODE_IMPLODE_ANIMATION) {
+		lastGridTimelineCursorX = -1;
+		return;
+	}
+
+	int32_t cursorX = getGridTimelineCursorX();
+	if (cursorX == lastGridTimelineCursorX) {
+		return;
+	}
+
+	for (int32_t xDisplay = 0; xDisplay < kDisplayWidth; xDisplay++) {
+		PadLEDs::image[kGridTimelineY][xDisplay] =
+		    (xDisplay == cursorX) ? colours::white_full : colours::grey;
+	}
+
+	lastGridTimelineCursorX = cursorX;
+	PadLEDs::sendOutMainPadColoursSoon();
+}
+
+// EKLEN - Display playhead position on grid pads
+int32_t SessionView::getGridTimelineCursorX() {
+	Clip* referenceClip = getGridTimelineReferenceClip();
+	if (!referenceClip || referenceClip->loopLength == 0) {
+		return -1;
+	}
+
+	uint32_t livePos = referenceClip->getClipToRecordTo()->getLivePos() % referenceClip->loopLength;
+	int32_t cursorX = static_cast<int32_t>((static_cast<uint64_t>(livePos) * kDisplayWidth) / referenceClip->loopLength);
+	return std::min<int32_t>(cursorX, kDisplayWidth - 1);
+}
+
+// EKLEN - Display playhead position on grid pads
+Clip* SessionView::getGridTimelineReferenceClip() {
+	if (currentPlaybackMode != &session || !playbackHandler.isEitherClockActive()) {
+		return nullptr;
+	}
+
+	Clip* referenceClip = nullptr;
+	for (int32_t c = 0; c < currentSong->sessionClips.getNumElements(); c++) {
+		Clip* clip = currentSong->sessionClips.getClipAtIndex(c);
+		if (currentSong->isClipActive(clip) && (!referenceClip || clip->loopLength > referenceClip->loopLength)) {
+			referenceClip = clip;
+		}
+	}
+
+	return referenceClip;
 }
 
 RGB SessionView::gridRenderClipColor(Clip* clip) {
@@ -3731,6 +3920,12 @@ ActionResult SessionView::gridHandlePads(int32_t x, int32_t y, int32_t on) {
 				gridModeActive = SessionGridModeEdit;
 				break;
 			}
+			// EKLEN - momentary section launch shift
+			// No persistent mode change here; checked with matrixDriver.isPadPressed()
+			// when pressing the MUTE/LAUNCH section column
+			case GridMode::WHITE: {
+				break;
+			}
 			case GridMode::RED: {
 				if (enableLoopPads) {
 					playbackHandler.tryLoopCommand(GlobalMIDICommand::LOOP);
@@ -3759,6 +3954,12 @@ ActionResult SessionView::gridHandlePads(int32_t x, int32_t y, int32_t on) {
 		}
 	}
 	else {
+		if (x < kDisplayWidth && y == kGridTimelineY) {
+			// EKLEN - Display playhead position on grid pads
+			// The fixed timeline row is visual feedback only, not a clip slot.
+			return ActionResult::DEALT_WITH;
+		}
+
 		gridActiveModeUsed = true;
 
 		Clip* clip = gridClipFromCoords(x, y);
@@ -3880,7 +4081,9 @@ ActionResult SessionView::gridHandlePadsEdit(int32_t x, int32_t y, int32_t on, C
 				// while holding section pad and repeats popup is displayed
 				deluge::hid::display::OLED::removePopup();
 			}
-			view.displayOutputName(clip->output, true, clip);
+			// EKLEN - display clip length
+			// added ", true);"
+			view.displayOutputName(clip->output, true, clip, true);
 
 			// we've either created or selected a clip, so set it to be current
 			currentSong->setCurrentClip(clip);
@@ -3991,6 +4194,11 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 		}
 
 		if (on) {
+			// EKLEN - launch section only when shift held
+			bool sectionLaunchShiftHeld = matrixDriver.isPadPressed(kDisplayWidth + 1, GridMode::WHITE);
+			if (!sectionLaunchShiftHeld) {
+				return ActionResult::DEALT_WITH;
+			}
 			// Immediate launch if shift pressed
 			gridStartSection(section, Buttons::isShiftButtonPressed());
 		}
@@ -4005,7 +4213,8 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 			Output* track = gridTrackFromX(x, maxTrack);
 
 			// holding one clip, then pressing a second empty clip
-			if ((gridFirstPressedX != -1 && gridFirstPressedY != -1)
+			// EKLEN - added "false &&" in line below for blockking clip copy option in green mode
+			if (false && (gridFirstPressedX != -1 && gridFirstPressedY != -1)
 			    && (gridSecondPressedX == -1 || gridSecondPressedY == -1)) {
 				performActionOnPadRelease = false; // doing a copy paste, so don't launch clips
 				gridSecondPressedX = x;
@@ -4036,6 +4245,10 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 			}
 			// lastly create a new clip, either on an existing track or on a new one
 			else if (currentUIMode == UI_MODE_NONE) {
+
+				// EKLEN - block creating new clip in green mode
+				return ActionResult::DEALT_WITH;
+
 				gridFirstPressedX = x;
 				gridFirstPressedY = y;
 				// will create the track if it doesn't exist
@@ -4054,7 +4267,9 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 					// Allow clip control (selection) if still holding it
 					if (x == gridFirstPressedX && y == gridFirstPressedY) {
 						currentUIMode = UI_MODE_CLIP_PRESSED_IN_SONG_VIEW;
-						view.displayOutputName(clip->output, true, clip);
+						// EKLEN - display clip length
+						// added ", true);"
+						view.displayOutputName(clip->output, true, clip, true);
 						display->cancelPopup();
 
 						// this needs to be called after the current clip is set in order to ensure that
@@ -4127,7 +4342,9 @@ ActionResult SessionView::gridHandlePadsLaunchWithSelection(int32_t x, int32_t y
 			performActionOnPadRelease = true;
 			selectedClipTimePressed = AudioEngine::audioSampleTimer;
 			currentSong->setCurrentClip(clip);
-			view.displayOutputName(clip->output, true, clip);
+			// EKLEN - display clip length
+			// added ", true);"
+			view.displayOutputName(clip->output, true, clip, true);
 			// this needs to be called after the current clip is set in order to ensure that
 			// if midi follow feedback is enabled, it sends feedback for the right clip
 			view.setActiveModControllableTimelineCounter(clip);
@@ -4271,8 +4488,10 @@ ActionResult SessionView::gridHandleScroll(int32_t offsetX, int32_t offsetY) {
 	clipPressEnded();
 
 	// Fix the range
+	// EKLEN - Display playhead position on grid pads
+	// Only seven clip rows are scrollable because the bottom row is fixed.
 	currentSong->songGridScrollY =
-	    std::clamp<int32_t>(currentSong->songGridScrollY - offsetY, 0, kMaxNumSections - kGridHeight);
+	    std::clamp<int32_t>(currentSong->songGridScrollY - offsetY, 0, kMaxNumSections - kGridClipHeight);
 	currentSong->songGridScrollX = std::clamp<int32_t>(currentSong->songGridScrollX + offsetX, 0,
 	                                                   std::max<int32_t>(0, (gridTrackCount() - kDisplayWidth) + 1));
 
@@ -4480,8 +4699,10 @@ Output* SessionView::gridTrackFromIndex(uint32_t trackIndex, uint32_t maxTrack) 
 }
 
 int32_t SessionView::gridYFromSection(uint32_t section) {
-	int32_t result = (kGridHeight - 1) - section + currentSong->songGridScrollY;
-	if (result >= kGridHeight) {
+	// EKLEN - Display playhead position on grid pads
+	// Map clip sections to rows 1..7 and leave row 0 fixed for the timeline
+	int32_t result = kGridClipHeight - section + currentSong->songGridScrollY;
+	if (result < static_cast<int32_t>(kGridFirstClipY) || result >= kGridHeight) {
 		return -1;
 	}
 
@@ -4489,7 +4710,13 @@ int32_t SessionView::gridYFromSection(uint32_t section) {
 }
 
 int32_t SessionView::gridSectionFromY(uint32_t y) {
-	int32_t result = ((kGridHeight - 1) - y) + currentSong->songGridScrollY;
+	// EKLEN - Display playhead position on grid pads
+	// Row 0 is visual feedback only, not a clip section.
+	if (y == kGridTimelineY) {
+		return -1;
+	}
+
+	int32_t result = (kGridClipHeight - y) + currentSong->songGridScrollY;
 	if (result >= kMaxNumSections) {
 		return -1;
 	}
