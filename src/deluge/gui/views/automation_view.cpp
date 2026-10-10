@@ -321,9 +321,8 @@ constexpr uint8_t kPadSelectionShortcutY = 7;
 constexpr uint8_t kVelocityShortcutX = 15;
 constexpr uint8_t kVelocityShortcutY = 1;
 
-// EKLEN >
-// Temporary JB Core Automation View shortcuts: user-facing columns 4-6 on the
-// velocity shortcut row.
+// EKLEN - JB Core MIDI >
+// Automation View shortcuts: user-facing columns 4-6 on the velocity shortcut row
 constexpr uint8_t kJBCoreShortcutFirstX = 3;
 constexpr uint8_t kJBCoreShortcutY = 1;
 
@@ -346,9 +345,7 @@ static bool isJBCoreDrum(Drum* drum) {
 	return midiDrum->isJBCoreRow()
 	       && midiDrum->note * kNumJBCoreCCParameters + kNumJBCoreCCParameters - 1 <= kJBCoreMaxCCNumber;
 }
-// EKLEN <
-
-AutomationView automationView{};
+AutomationView automationView{}; // EKLEN <
 
 AutomationView::AutomationView() {
 
