@@ -32,6 +32,8 @@ ConsequenceNoteExistence::ConsequenceNoteExistence(InstrumentClip* newClip, int3
 	velocity = note->getVelocity();
 	probability = note->getProbability();
 	lift = note->getLift();
+	// EKLEN - JB Core MIDI
+	memcpy(jbCoreCCValues, note->jbCoreCCValues, sizeof(jbCoreCCValues));
 
 	type = newType;
 }
@@ -62,6 +64,8 @@ Error ConsequenceNoteExistence::revert(TimeType time, ModelStack* modelStack) {
 		note->setVelocity(velocity);
 		note->setProbability(probability);
 		note->setLift(lift);
+		// EKLEN - JB Core MIDI
+		memcpy(note->jbCoreCCValues, jbCoreCCValues, sizeof(jbCoreCCValues));
 	}
 
 	return Error::NONE;

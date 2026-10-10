@@ -39,6 +39,24 @@ void MIDIDrum::noteOff(ModelStackWithThreeMainThings* modelStack, int32_t veloci
 	state = false;
 }
 
+// EKLEN - JB Core MIDI >
+// Send CCs for this drum
+void MIDIDrum::sendJBCoreCCs(uint8_t const* values) {
+	if (!isJBCoreRow() || !values) {
+		return;
+	}
+
+	int32_t firstCC = note * kNumJBCoreCCParameters;
+	if (firstCC + kNumJBCoreCCParameters - 1 > kJBCoreMaxCCNumber) {
+		return;
+	}
+
+	for (int32_t parameter = 0; parameter < kNumJBCoreCCParameters; parameter++) {
+		midiEngine.sendCC(this, channel, firstCC + parameter, values[parameter], kMIDIOutputFilterNoMPE);
+	}
+}
+// EKLEN <
+
 void MIDIDrum::unassignAllVoices() {
 	if (hasAnyVoices()) {
 		noteOff(NULL);

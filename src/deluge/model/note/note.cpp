@@ -18,8 +18,22 @@
 #include "model/note/note.h"
 #include "storage/storage_manager.h"
 #include "util/functions.h"
+#include <cstring> // EKLEN - JB Core MIDI
+
+// # Note::Note() {}
 
 Note::Note() {
+	clearJBCoreCCValues();
+} // EKLEN - JB Core MIDI
+
+// EKLEN - JB Core MIDI
+void Note::copyJBCoreCCValuesFrom(Note const& other) {
+	memcpy(jbCoreCCValues, other.jbCoreCCValues, sizeof(jbCoreCCValues));
+}
+
+// EKLEN - JB Core MIDI
+void Note::clearJBCoreCCValues() {
+	memset(jbCoreCCValues, 0, sizeof(jbCoreCCValues));
 }
 
 /*

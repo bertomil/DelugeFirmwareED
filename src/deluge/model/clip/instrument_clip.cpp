@@ -33,6 +33,7 @@
 #include "model/consequence/consequence_note_row_mute.h"
 #include "model/consequence/consequence_scale_add_note.h"
 #include "model/drum/drum_name.h"
+#include "model/drum/midi_drum.h" // EKLEN - JB Core MIDI
 #include "model/instrument/cv_instrument.h"
 #include "model/instrument/midi_instrument.h"
 #include "model/note/note.h"
@@ -924,7 +925,11 @@ void InstrumentClip::sendPendingNoteOn(ModelStackWithTimelineCounter* modelStack
 	if (output->type == OutputType::KIT) {
 		ModelStackWithThreeMainThings* modelStackWithThreeMainThings = modelStackWithNoteRow->addOtherTwoThings(
 		    pendingNoteOn->noteRow->drum->toModControllable(), &pendingNoteOn->noteRow->paramManager);
-
+		// EKLEN - JB Drums >
+		if (pendingNoteOn->noteRow->drum->type == DrumType::MIDI) {
+			((MIDIDrum*)pendingNoteOn->noteRow->drum)->sendJBCoreCCs(pendingNoteOn->jbCoreCCValues);
+		}
+		// EKLEN <
 		pendingNoteOn->noteRow->drum->noteOn(modelStackWithThreeMainThings, pendingNoteOn->velocity, (Kit*)output,
 		                                     mpeValues, MIDI_CHANNEL_NONE, pendingNoteOn->sampleSyncLength,
 		                                     pendingNoteOn->ticksLate);

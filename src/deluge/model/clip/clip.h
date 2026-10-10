@@ -200,6 +200,7 @@ public:
 	uint32_t indexForSaving; // For use only while saving song
 
 	LaunchStyle launchStyle;
+	int16_t launchRepeats; // EKLEN - Clip launch repeats. (0 = inf, 1-9999 stops clip after that many repeats)
 	int64_t fillEventAtTickCount;
 	bool overdubsShouldCloneOutput;
 

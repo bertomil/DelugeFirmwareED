@@ -35,6 +35,9 @@ public:
 	int8_t velocity;
 	int8_t probability;
 	uint8_t lift;
+	// EKLEN - JB Core MIDI
+	// Preserve the JB Core trigger values when undo recreates a deleted note.
+	uint8_t jbCoreCCValues[kNumJBCoreCCParameters];
 
 	ExistenceChangeType type;
 };

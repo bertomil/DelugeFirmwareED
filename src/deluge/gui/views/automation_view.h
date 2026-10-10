@@ -193,6 +193,15 @@ private:
 	                                int32_t y, int32_t velocity, SquareInfo& squareInfo);
 	void velocityEditPadAction(ModelStackWithNoteRow* modelStackWithNoteRow, NoteRow* noteRow, InstrumentClip* clip,
 	                           int32_t x, int32_t y, int32_t velocity, int32_t effectiveLength, SquareInfo& squareInfo);
+	// EKLEN >
+	// Set a per-trigger JB Core value from the note editor without creating or
+	// deleting the underlying note.
+	void jbCoreEditPadAction(ModelStackWithNoteRow* modelStackWithNoteRow, NoteRow* noteRow, int32_t x, int32_t y,
+	                         int32_t velocity, SquareInfo& squareInfo);
+	void setJBCoreCC(ModelStackWithNoteRow* modelStackWithNoteRow, NoteRow* noteRow, int32_t x, int32_t parameter,
+	                 int32_t value);
+	// EKLEN <
+
 	int32_t getVelocityFromY(int32_t y);
 	int32_t getYFromVelocity(int32_t velocity);
 	void addNoteWithNewVelocity(int32_t x, int32_t velocity, int32_t newVelocity);

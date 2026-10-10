@@ -19,6 +19,8 @@
 
 #include <cstdint>
 
+// EKLEN - JB Core MIDI
+#include "definitions_cxx.hpp"
 #include "model/positionable.h"
 
 class Note : public Positionable {
@@ -41,12 +43,22 @@ public:
 
 	inline int32_t getProbability() { return probability; }
 
+	// EKLEN - JB Core MIDI
+	// Copy/reset the three per-trigger JB Core CC values when note-editing code
+	// creates or transforms notes.
+	void copyJBCoreCCValuesFrom(Note const& other);
+	void clearJBCoreCCValues();
+
 	//	void writeToFile();
 	int32_t length;
 	uint8_t velocity;
 	uint8_t probability;
 	/// Lift is noteOff velocity.
 	uint8_t lift;
+
+	// EKLEN - JB Core MIDI
+	// Extra 7-bit values emitted as three note-derived CCs for KIT MIDI rows on the reserved JB Core channel
+	uint8_t jbCoreCCValues[kNumJBCoreCCParameters];
 
 	// Understanding the probability field: the first bit says whether it's based on a previous one.
 	// So take the rightmost 7 bits. If that's greater than kNumProbabilityValues (20),

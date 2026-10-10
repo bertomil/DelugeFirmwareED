@@ -33,6 +33,12 @@ public:
 	int32_t getNumChannels() { return 16; }
 	void unassignAllVoices();
 
+	// EKLEN - JB Core
+	// Emit the three per-trigger JB Core values on displayed MIDI channel 11
+	// before the note-on.
+	void sendJBCoreCCs(uint8_t const* values);
+	bool isJBCoreRow() const { return channel == kJBCoreMIDIChannel; }
+
 	int8_t modEncoderAction(ModelStackWithThreeMainThings* modelStack, int8_t offset, uint8_t whichModEncoder);
 
 	void expressionEvent(int32_t newValue, int32_t whichExpressionDimension);

@@ -29,16 +29,17 @@
 #include "deluge/processing/engines/cv_engine_c_interface.h"
 #include "deluge/util/cfunctions.h"
 
-#define OLED_CODE_FOR_CV 1
+#define OLED_CODE_FOR_CV              1
+#define OLED_CODE_FOR_CV_GATE_RELEASE 2
 
 void setupSPIInterrupts()
 {
     setupAndEnableInterrupt(cvSPITransferComplete, INTC_ID_SPRI0 + SPI_CHANNEL_CV * 3, 5);
 }
 
-void enqueueCVMessage(int channel, uint32_t message)
+void enqueueCVMessage(int channel, uint32_t message, int gateReleasePending)
 {
-    enqueueSPITransfer(OLED_CODE_FOR_CV, (uint8_t const*)message);
+    enqueueSPITransfer(gateReleasePending ? OLED_CODE_FOR_CV_GATE_RELEASE : OLED_CODE_FOR_CV, (uint8_t const*)message);
 }
 
 int oledWaitingForMessage    = 256; // 256 means none.
@@ -89,6 +90,32 @@ void oledSelectingComplete()
 }
 
 int spiDestinationSendingTo;
+static int cvChannelSending       = -1;
+static int cvTransferReleasesGate = 0;
+
+static int isCVTransferDestination(int destinationId)
+{
+    return destinationId == OLED_CODE_FOR_CV || destinationId == OLED_CODE_FOR_CV_GATE_RELEASE;
+}
+
+static int getCVChannelFromMessage(uint32_t message)
+{
+    uint8_t command = message >> 24;
+    if ((command & 0b00110000) != 0b00110000)
+    {
+        return -1;
+    }
+
+    if (command & 0b00000010)
+    {
+        return 1;
+    }
+    if (command & 0b00000001)
+    {
+        return 0;
+    }
+    return -1;
+}
 
 void sendCVTransfer()
 {
@@ -101,7 +128,9 @@ void sendCVTransfer()
 
     RSPI(SPI_CHANNEL_OLED_MAIN).SPCR |= 1 << 7; // Receive interrupt enable
 
-    uint32_t message = (uint32_t)spiTransferQueue[spiTransferQueueReadPos].dataAddress;
+    uint32_t message       = (uint32_t)spiTransferQueue[spiTransferQueueReadPos].dataAddress;
+    cvTransferReleasesGate = spiTransferQueue[spiTransferQueueReadPos].destinationId == OLED_CODE_FOR_CV_GATE_RELEASE;
+    cvChannelSending       = cvTransferReleasesGate ? getCVChannelFromMessage(message) : -1;
 
     spiTransferQueueReadPos =
         (spiTransferQueueReadPos + 1)
@@ -135,7 +164,6 @@ void sendSPITransferFromQueue()
     else
     {
         sendCVTransfer();
-        cvSent();
     }
 }
 
@@ -170,9 +198,17 @@ void cvSPITransferComplete(uint32_t sense)
     RSPI(SPI_CHANNEL_OLED_MAIN).SPBFCR.BYTE |=
         1 << 6; // Reset RX buffer. Slightly weird that we have to do it here, after the transfer? Or not weird?
 
+    // Only release the matching gate after its own CV DAC transaction is complete and the DAC has been deselected.
+    if (cvTransferReleasesGate)
+    {
+        cvSent(cvChannelSending);
+    }
+    cvChannelSending       = -1;
+    cvTransferReleasesGate = 0;
+
     // If anything else to send, and it's to the CV DAC again, then just go ahead.
     if (spiTransferQueueWritePos != spiTransferQueueReadPos
-        && spiTransferQueue[spiTransferQueueReadPos].destinationId == OLED_CODE_FOR_CV)
+        && isCVTransferDestination(spiTransferQueue[spiTransferQueueReadPos].destinationId))
     {
         sendCVTransfer();
     }

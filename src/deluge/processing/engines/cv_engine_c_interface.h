@@ -21,7 +21,7 @@
 extern "C" {
 #endif
 
-void cvSent();
+void cvSent(int channel);
 
 #ifdef __cplusplus
 }

@@ -57,6 +57,7 @@ Clip::Clip(ClipType newType) : type(newType) {
 	originalLength = 0;
 	armedForRecording = true;
 	launchStyle = LaunchStyle::DEFAULT;
+	launchRepeats = 0; // EKLEN - Clip launch repeats
 	fillEventAtTickCount = 0;
 
 	// initialize automation clip view variables
@@ -94,6 +95,8 @@ void Clip::cloneFrom(Clip const* otherClip) {
 	repeatCount = otherClip->repeatCount;
 	armedForRecording = otherClip->armedForRecording;
 	launchStyle = otherClip->launchStyle;
+	// EKLEN - Clip launch repeats
+	launchRepeats = otherClip->launchRepeats;
 }
 
 void Clip::copyBasicsFrom(Clip const* otherClip) {
@@ -102,6 +105,7 @@ void Clip::copyBasicsFrom(Clip const* otherClip) {
 	// modKnobMode = otherClip->modKnobMode;
 	section = otherClip->section;
 	launchStyle = otherClip->launchStyle;
+	launchRepeats = otherClip->launchRepeats; // EKLEN - Clip launch repeats
 	onAutomationClipView = otherClip->onAutomationClipView;
 }
 
@@ -688,6 +692,10 @@ void Clip::writeDataToFile(Serializer& writer, Song* song) {
 	if (launchStyle != LaunchStyle::DEFAULT) {
 		writer.writeAttribute("launchStyle", launchStyleToString(launchStyle));
 	}
+	// EKLEN - Clip launch repeats
+	if (launchRepeats != 0) {
+		writer.writeAttribute("launchRepeats", launchRepeats);
+	}
 }
 
 void Clip::writeMidiCommandsToFile(Serializer& writer, Song* song) {
@@ -764,6 +772,17 @@ void Clip::readTagFromFile(Deserializer& reader, char const* tagName, Song* song
 
 	else if (!strcmp(tagName, "launchStyle")) {
 		launchStyle = stringToLaunchStyle(reader.readTagOrAttributeValue());
+	}
+
+	// EKLEN - Clip launch repeats
+	else if (!strcmp(tagName, "launchRepeats")) {
+		launchRepeats = reader.readTagOrAttributeValueInt();
+		if (launchRepeats < 0) {
+			launchRepeats = 0;
+		}
+		else if (launchRepeats > 9999) {
+			launchRepeats = 9999;
+		}
 	}
 
 	/*

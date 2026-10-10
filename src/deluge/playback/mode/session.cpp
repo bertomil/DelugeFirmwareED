@@ -58,6 +58,21 @@ enum class LaunchStatus {
 	LAUNCH_ALONG_WITH_EXISTING_LAUNCHING,
 };
 
+// EKLEN - Clip launch repeats (this static)
+static void updatePostLaunchTimingForClip(Clip* clip, int32_t repeats, int32_t* launchLengthForOneRepeat,
+                                          int32_t* numRepeatsForLaunch, int64_t* ticksUntilLaunch) {
+	if (repeats < 1) {
+		return;
+	}
+
+	int64_t thisClipTicksUntilLaunch = (int64_t)clip->loopLength * repeats;
+	if (thisClipTicksUntilLaunch > *ticksUntilLaunch) {
+		*launchLengthForOneRepeat = clip->loopLength;
+		*numRepeatsForLaunch = repeats;
+		*ticksUntilLaunch = thisClipTicksUntilLaunch;
+	}
+}
+
 Session::Session() {
 	cancelAllLaunchScheduling();
 	lastSectionArmed = 255;
@@ -333,6 +348,9 @@ void Session::doLaunch(bool isFillLaunch) {
 		}
 	}
 	int32_t distanceTilLaunchEvent = 0; // For if clips automatically armed cos they just started recording a loop
+	// EKLEN - Clip launch repeats (two rows below)
+	int32_t numRepeatsForNextLaunchEvent = 1;
+	int64_t ticksUntilNextLaunchEvent = 0;
 
 	// Ok, now action all currently playing clips. This includes clips armed to start recording or stop - including ones
 	// which weren't actually armed to stop but need to stop in order to make way for other ones which were armed to
@@ -382,7 +400,9 @@ void Session::doLaunch(bool isFillLaunch) {
 
 				// If that caused it to be armed *again*...
 				if (clip->armState == ArmState::ON_NORMAL) {
-					distanceTilLaunchEvent = std::max(distanceTilLaunchEvent, clip->loopLength);
+					// EKLEN - Clip launch repeats (logic changed to include repeats for clips that just started recording a loop)
+					updatePostLaunchTimingForClip(clip, 1, &distanceTilLaunchEvent, &numRepeatsForNextLaunchEvent,
+					                              &ticksUntilNextLaunchEvent);
 				}
 			}
 			// If armed to stop (these mean stop normally or end soloing respectively)
@@ -567,7 +587,9 @@ doNormalLaunch:
 
 					// If that caused it to be armed *again*...
 					if (clip->armState == ArmState::ON_NORMAL) {
-						distanceTilLaunchEvent = std::max(distanceTilLaunchEvent, clip->loopLength);
+						// EKLEN - Clip launch repeats (logic changed to include repeats for clips that just started recording a loop)
+						updatePostLaunchTimingForClip(clip, 1, &distanceTilLaunchEvent, &numRepeatsForNextLaunchEvent,
+						                              &ticksUntilNextLaunchEvent);
 					}
 
 					// Arm it again if a fill, so it stops at the launchEvent
@@ -593,11 +615,18 @@ doNormalLaunch:
 			}
 		}
 
-		// Arm it again if a ONCE clip, so it stops at the launchEvent
-		if (!isFillLaunch && (clip->activeIfNoSolo || clip->soloingInSessionMode)
-		    && clip->launchStyle == LaunchStyle::ONCE && clip->armState == ArmState::OFF) {
+		// Arm it again if a ONCE clip, or if a directly launched clip has a fixed repeat count.
+		// EKLEN - Clip launch repeats (added "&& !clip->wasActiveBefore")
+		bool clipWasLaunchedDirectly = (lastSectionArmed == 255 && !clip->wasActiveBefore);
+		int32_t clipLaunchRepeats =
+		    (clip->launchStyle == LaunchStyle::ONCE)
+		        ? 1
+		        : ((clipWasLaunchedDirectly && clip->launchRepeats >= 1) ? clip->launchRepeats : 0);
+		if (!isFillLaunch && (clip->activeIfNoSolo || clip->soloingInSessionMode) && clipLaunchRepeats >= 1
+		    && clip->armState == ArmState::OFF) {
 			clip->armState = ArmState::ON_NORMAL;
-			distanceTilLaunchEvent = std::max(distanceTilLaunchEvent, clip->loopLength);
+			updatePostLaunchTimingForClip(clip, clipLaunchRepeats, &distanceTilLaunchEvent,
+			                              &numRepeatsForNextLaunchEvent, &ticksUntilNextLaunchEvent);
 		}
 
 		bool clipActiveAfter = clip->soloingInSessionMode || (clip->activeIfNoSolo && !anySoloingAfter);
@@ -667,8 +696,9 @@ doNormalLaunch:
 
 				// If AudioClip recording just began...
 				if (distanceTilLaunchEvent) {
-					scheduleLaunchTiming(playbackHandler.lastSwungTickActioned + distanceTilLaunchEvent, 1,
-					                     distanceTilLaunchEvent);
+					// EKLEN - Clip launch repeats (added numRepeatsForNextLaunchEvent)
+					scheduleLaunchTiming(playbackHandler.lastSwungTickActioned + distanceTilLaunchEvent,
+					                     numRepeatsForNextLaunchEvent, distanceTilLaunchEvent);
 					armingChanged();
 				}
 			}
@@ -720,6 +750,43 @@ void Session::scheduleLaunchTiming(int64_t atTickCount, int32_t numRepeatsUntil,
 			playbackHandler.scheduleSwungTick();
 		}
 	}
+}
+
+// EKLEN - Clip launch repeats (whole function added)
+void Session::scheduleClipStopAfterRepeats(Clip* clip, int32_t repeats) {
+	if (!playbackHandler.isEitherClockActive() || currentPlaybackMode != this || !currentSong->isClipActive(clip)) {
+		return;
+	}
+
+	if (repeats < 1) {
+		if (clip->armState == ArmState::ON_NORMAL) {
+			clip->armState = ArmState::OFF;
+			launchSchedulingMightNeedCancelling();
+			armingChanged();
+		}
+		return;
+	}
+
+	int32_t pos = (uint32_t)clip->getClipToRecordTo()->getActualCurrentPosAsIfPlayingInForwardDirection()
+	              % (uint32_t)clip->loopLength;
+	int32_t ticksTilLaunchEvent = clip->loopLength - pos;
+	if (ticksTilLaunchEvent <= 0) {
+		ticksTilLaunchEvent = clip->loopLength;
+	}
+
+	playbackHandler.stopOutputRecordingAtLoopEnd = false;
+	switchToArrangementAtLaunchEvent = false;
+	clip->armState = ArmState::ON_NORMAL;
+	launchEventAtSwungTickCount = playbackHandler.getActualSwungTickCount() + ticksTilLaunchEvent;
+	numRepeatsTilLaunch = repeats;
+	currentArmedLaunchLengthForOneRepeat = clip->loopLength;
+
+	if (playbackHandler.swungTicksTilNextEvent > ticksTilLaunchEvent) {
+		playbackHandler.swungTicksTilNextEvent = ticksTilLaunchEvent;
+		playbackHandler.scheduleSwungTick();
+	}
+
+	armingChanged();
 }
 
 int32_t Session::getNumSixteenthNotesRemainingTilLaunch() {
@@ -2109,6 +2176,10 @@ void Session::resetPlayPos(int32_t newPos, bool doingComplete, int32_t buttonPre
 	}
 
 	int32_t distanceTilLaunchEvent = 0;
+	// EKLEN - Clip launch repeats (is now 1 by default, so this is a better default than 0)
+	// Two rows below added
+	int32_t numRepeatsForNextLaunchEvent = 1;
+	int64_t ticksUntilNextLaunchEvent = 0;
 
 	for (int32_t c = currentSong->sessionClips.getNumElements() - 1; c >= 0; c--) {
 		Clip* clip = currentSong->sessionClips.getClipAtIndex(c);
@@ -2140,15 +2211,24 @@ yeahNahItsOn:
 
 					giveClipOpportunityToBeginLinearRecording(clip, c, buttonPressLatency);
 
-					if (clip->armState == ArmState::ON_NORMAL) { // Rohan: What's this for again? Auto arming of
-						                                         // sections? I think not linear recording...
-						distanceTilLaunchEvent = std::max(distanceTilLaunchEvent, clip->loopLength);
+						// EKLEN - Clip launch repeats (added numRepeatsForNextLaunchEvent and ticksUntilNextLaunchEvent to updatePostLaunchTimingForClip)
+						if (clip->armState == ArmState::ON_NORMAL) { // Rohan: What's this for again? Auto arming of
+							                                         // sections? I think not linear recording...
+							updatePostLaunchTimingForClip(clip, 1, &distanceTilLaunchEvent, &numRepeatsForNextLaunchEvent,
+							                              &ticksUntilNextLaunchEvent);
+						}
 					}
 				}
-			}
 
-			// Rohan: Not quite sure why we needed to set this here?
-			clip->output->setActiveClip(modelStackWithTimelineCounter);
+				// EKLEN - Clip launch repeats (added if statement to auto arm Clips with launch repeats, if they were previously disarmed)
+				if (doingComplete && clip->launchRepeats >= 1 && clip->armState == ArmState::OFF) {
+					clip->armState = ArmState::ON_NORMAL;
+					updatePostLaunchTimingForClip(clip, clip->launchRepeats, &distanceTilLaunchEvent,
+					                              &numRepeatsForNextLaunchEvent, &ticksUntilNextLaunchEvent);
+				}
+
+				// Rohan: Not quite sure why we needed to set this here?
+				clip->output->setActiveClip(modelStackWithTimelineCounter);
 		}
 	}
 
@@ -2157,13 +2237,14 @@ yeahNahItsOn:
 			cancelAllArming();
 		}
 
-		// If just became armed (audio clip began recording)... The placement of this probably isn't quite ideal...
-		else if (distanceTilLaunchEvent) {
-			scheduleLaunchTiming(playbackHandler.lastSwungTickActioned + distanceTilLaunchEvent, 1,
-			                     distanceTilLaunchEvent);
-			armingChanged(); // This isn't really ideal. Is here for AudioClips which just armed themselves in setPos()
-			                 // call
-		}
+			// If just became armed (audio clip began recording)... The placement of this probably isn't quite ideal...
+			// EKLEN - Clip launch repeats (added numRepeatsForNextLaunchEvent)
+			else if (distanceTilLaunchEvent) {
+				scheduleLaunchTiming(playbackHandler.lastSwungTickActioned + distanceTilLaunchEvent,
+				                     numRepeatsForNextLaunchEvent, distanceTilLaunchEvent);
+				armingChanged(); // This isn't really ideal. Is here for AudioClips which just armed themselves in setPos()
+				                 // call
+			}
 	}
 }
 

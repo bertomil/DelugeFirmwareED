@@ -63,8 +63,8 @@ public:
 	void setCVPitchBend(uint8_t channel, int32_t value, bool outputToo = true);
 	int32_t calculateVoltage(int32_t note, uint8_t channel);
 	void physicallySwitchGate(int32_t channel);
-	// defer updating the gate while CV is pending and do it when it's done
-	void cvOutUpdated();
+	// Defer updating a gate while its matching CV transfer is pending.
+	void cvOutUpdated(int32_t channel);
 
 	void analogOutTick();
 	void playbackBegun();
@@ -94,7 +94,7 @@ public:
 	// time exactly. This could be improved.
 	uint32_t mostRecentSwitchOffTimeOfPendingNoteOn;
 
-	void sendVoltageOut(uint8_t channel, uint16_t voltage);
+	void sendVoltageOut(uint8_t channel, uint16_t voltage, bool gateReleasePending = false);
 
 	inline bool isNoteOn(int32_t channel, int32_t note) {
 		return (gateChannels[channel].on && cvChannels[channel].noteCurrentlyPlaying == note);
@@ -104,10 +104,10 @@ private:
 	void recalculateCVChannelVoltage(uint8_t channel);
 	void switchGateOff(int32_t channel);
 	void switchGateOn(int32_t channel, int32_t doInstantlyIfPossible = false);
-	/// signifies there's a gate that can't go until the cv is output
-	bool cvOutPending{false};
-	/// gate 1-4 as synths or drums
-	bool gateOutputPending{false};
+	/// Per-CV-channel count of gate-releasing DAC transfers still in flight.
+	uint8_t cvOutPending[NUM_CV_CHANNELS]{};
+	/// Gates 1-4 waiting to be physically updated.
+	uint8_t gateOutputPending{0};
 	/// gate 3 as a run signal
 	bool asapGateOutputPending;
 	/// gate 4 as a clock signal

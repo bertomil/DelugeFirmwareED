@@ -24,7 +24,7 @@ void oledSelectingComplete();
 void sendOledDMA();
 void oledTransferComplete(uint32_t int_sense);
 void oledDeselectionComplete();
-void enqueueCVMessage(int channel, uint32_t message);
+void enqueueCVMessage(int channel, uint32_t message, int gateReleasePending);
 void cvSPITransferComplete(uint32_t sense);
 void setupSPIInterrupts();
 void sendSPITransferFromQueue();

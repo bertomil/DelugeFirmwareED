@@ -164,6 +164,7 @@ private:
 	//
 	// selectEncoderAction() triggered commands
 	void commandChangeSectionRepeats(int8_t offset);
+	void commandChangeClipRepeats(int8_t offset);  // EKLEN - Change clip repeats
 	void commandChangeClipPreset(int8_t offset);
 	void commandChangeCurrentSectionRepeats(int8_t offset);
 	void commandChangeLayout(int8_t offset);
@@ -173,12 +174,12 @@ private:
 	void sectionPadAction(uint8_t y, bool on);
 	void clipPressEnded();
 	void drawSectionRepeatNumber();
+	void drawClipRepeatNumber(Clip* clip); // EKLEN - Draw clip repeat number
 	void beginEditingSectionRepeatsNum();
 	void goToArrangementEditor();
 	void rowNeedsRenderingDependingOnSubMode(int32_t yDisplay);
 	void setCentralLEDStates();
-	// EKLEN - display playhead position
-	void displayPlayheadPosition(bool force = false);
+	void displayPlayheadPosition(bool force = false); // EKLEN - Display playhead position
 
 	Clip* createNewAudioClip(int32_t yDisplay);
 	Clip* createNewInstrumentClip(OutputType outputType, int32_t yDisplay);
@@ -200,7 +201,7 @@ private:
 	bool sessionButtonUsed = false;
 	bool horizontalEncoderPressed = false;
 	bool viewingRecordArmingActive = false;
-	// EKLEN - members for displaying playhead position
+	// EKLEN - Members for displaying playhead position
 	int32_t lastDisplayedPlayheadBar = -1;
 	int32_t lastDisplayedPlayheadBeat = -1;
 	int32_t lastDisplayedPlayheadTotalBars = -1;
@@ -215,7 +216,7 @@ private:
 	                           uint8_t occupancyMask[][kDisplayWidth + kSideBarWidth]);
 	bool gridRenderMainPads(uint32_t whichRows, RGB image[][kDisplayWidth + kSideBarWidth],
 	                        uint8_t occupancyMask[][kDisplayWidth + kSideBarWidth], bool drawUndefinedArea = true);
-	// EKLEN - grid timeline playhead
+	// EKLEN - Grid timeline playhead
 	void renderGridTimelineRow(RGB image[][kDisplayWidth + kSideBarWidth],
 	                           uint8_t occupancyMask[][kDisplayWidth + kSideBarWidth]);
 	void displayGridTimelinePlayhead();
@@ -230,6 +231,7 @@ private:
 	ActionResult gridHandlePadsLaunchWithSelection(int32_t x, int32_t y, int32_t on, Clip* clip);
 	ActionResult gridHandlePadsMacros(int32_t x, int32_t y, int32_t on, Clip* clip);
 	void gridHandlePadsLaunchToggleArming(Clip* clip, bool immediate);
+	bool gridSecondaryShiftHeld(); // EKLEN - Disable clip launch when clip is pressed with white shift
 
 	void gridTransitionToSessionView();
 	void gridTransitionToViewForClip(Clip* clip);
@@ -237,13 +239,13 @@ private:
 	SessionGridMode gridModeSelected = SessionGridModeEdit;
 	SessionGridMode gridModeActive = SessionGridModeEdit;
 	bool gridActiveModeUsed = false;
+	bool clipWasSelectedWithGridSecondaryShift = false; 	// EKLEN - Disable clip launch when clip is pressed with white shift
 
 	int32_t gridFirstPressedX = -1;
 	int32_t gridFirstPressedY = -1;
 	int32_t gridSecondPressedX = -1;
 	int32_t gridSecondPressedY = -1;
-	// EKLEN - grid timeline playhead
-	int32_t lastGridTimelineCursorX = -1;
+	int32_t lastGridTimelineCursorX = -1; // EKLEN - Grid timeline playhead
 	inline bool gridSecondPadInactive() { return (gridSecondPressedX == -1 && gridSecondPressedY == -1); }
 
 	inline void gridResetPresses(bool first = true, bool second = true) {

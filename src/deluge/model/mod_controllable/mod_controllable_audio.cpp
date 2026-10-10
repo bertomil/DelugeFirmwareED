@@ -40,6 +40,27 @@
 
 namespace params = deluge::modulation::params;
 
+// EKLEN - Limit Delay Amount to 24 when controlled by MIDI CC
+namespace {
+constexpr int32_t kDelayAmountMidiMaxDisplayValue = 24;
+// Highest internal knob position that still displays as Delay Amount 24 on the 0-50 menu scale
+constexpr int32_t kDelayAmountMidiMaxKnobPos =
+    (((kDelayAmountMidiMaxDisplayValue * 2 + 1) * kMaxKnobPos) / (2 * kMaxMenuValue)) - kKnobPosOffset;
+static_assert(kDelayAmountMidiMaxKnobPos == -2);
+
+bool isDelayAmountParam(ModelStackWithAutoParam const* modelStack) {
+	params::Kind kind = modelStack->paramCollection->getParamKind();
+	return (kind == params::Kind::PATCHED && modelStack->paramId == params::GLOBAL_DELAY_FEEDBACK)
+	       || (kind == params::Kind::UNPATCHED_GLOBAL && modelStack->paramId == params::UNPATCHED_DELAY_AMOUNT);
+}
+
+void limitClipMidiCCKnobPosForParam(int32_t& knobPos, ModelStackWithAutoParam const* modelStack) {
+	if (isDelayAmountParam(modelStack) && knobPos > kDelayAmountMidiMaxKnobPos) {
+		knobPos = kDelayAmountMidiMaxKnobPos;
+	}
+}
+} // namespace
+
 extern int32_t spareRenderingBuffer[][SSI_TX_BUFFER_NUM_SAMPLES];
 
 ModControllableAudio::ModControllableAudio() {
@@ -1268,6 +1289,9 @@ bool ModControllableAudio::offerReceivedCCToLearnedParamsForClip(MIDIDevice* fro
 
 				// calculate new knob position based on value received and deluge current value
 				newKnobPos = MidiTakeover::calculateKnobPos(knobPos, value, knob, false, CC_NUMBER_NONE, isStepEditing);
+
+				// EKLEN - Limit Delay Amount to 24 when controlled by MIDI CC
+				limitClipMidiCCKnobPosForParam(newKnobPos, modelStackWithParam);
 
 				// is the cc being received for the same value as the current knob pos? If so, do nothing
 				if (newKnobPos == knobPos) {

@@ -37,8 +37,18 @@ extern "C" {
 
 CVEngine cvEngine{};
 
+namespace {
+uint8_t getGateMask(uint8_t channel) {
+	return 1 << channel;
+}
+
+bool isCVOutPendingForGate(uint8_t channel, uint8_t const* pendingCounts) {
+	return (channel < NUM_CV_CHANNELS) && pendingCounts[channel];
+}
+} // namespace
+
 CVEngine::CVEngine() {
-	gateOutputPending = false;
+	gateOutputPending = 0;
 	asapGateOutputPending = false;
 	clockOutputPending = false;
 	minGateOffTime = 10;
@@ -56,7 +66,7 @@ void CVEngine::init() {
 	IO::setOutputState(6, 13, 1);
 */
 	if (display->haveOLED()) {
-		enqueueCVMessage(SPI_CHANNEL_CV, 0b00000101000000100000000000000000); // LIN = 1
+		enqueueCVMessage(SPI_CHANNEL_CV, 0b00000101000000100000000000000000, false); // LIN = 1
 	}
 	else {
 		R_RSPI_SendBasic32(SPI_CHANNEL_CV, 0b00000101000000100000000000000000); // LIN = 1
@@ -71,7 +81,7 @@ void CVEngine::init() {
 	IO::setOutputState(6, 13, 1);
 	*/
 	if (display->haveOLED()) {
-		enqueueCVMessage(SPI_CHANNEL_CV, 0b00000101000000000000000000000000); // LIN = 0
+		enqueueCVMessage(SPI_CHANNEL_CV, 0b00000101000000000000000000000000, false); // LIN = 0
 	}
 	else {
 		R_RSPI_SendBasic32(SPI_CHANNEL_CV, 0b00000101000000000000000000000000); // LIN = 0
@@ -100,14 +110,17 @@ void CVEngine::updateGateOutputs() {
 		clockOutputPending = false;
 		asapGateOutputPending = false;
 	}
-	// note or gate on the cv channel - if there's a cv out pending we send the gate after it finishes. This avoids a
-	// situation where the cv is delayed for an oled refresh and the gate gets sent first, causing an audible pitch
-	// correction
-	if (!cvOutPending && gateOutputPending) {
+	// A melodic CV gate may only be sent after the matching CV DAC write completes. Gate-only drum outputs do not
+	// have an associated CV transfer, so they can be released independently.
+	if (gateOutputPending) {
 		for (int32_t g = 0; g < NUM_GATE_CHANNELS; g++) {
-			physicallySwitchGate(g);
+			uint8_t gateMask = getGateMask(g);
+			bool waitingForCV = isCVOutPendingForGate(g, cvOutPending);
+			if ((gateOutputPending & gateMask) && !waitingForCV) {
+				physicallySwitchGate(g);
+				gateOutputPending &= ~gateMask;
+			}
 		}
-		gateOutputPending = false;
 	}
 }
 
@@ -135,7 +148,7 @@ void CVEngine::switchGateOn(int32_t channel, int32_t doInstantlyIfPossible) {
 		asapGateOutputPending = true;
 	}
 	else {
-		gateOutputPending = true;
+		gateOutputPending |= getGateMask(channel);
 	}
 
 	// If this gate was switched off more recently than any previous gate switch-off of a pending note-on, update the
@@ -179,8 +192,8 @@ void CVEngine::sendNote(bool on, uint8_t channel, int16_t note) {
 			voltage = calculateVoltage(note, channel);
 			voltage = std::min(voltage, (int32_t)65535);
 			voltage = std::max(voltage, (int32_t)0);
-			cvOutPending = true;
-			sendVoltageOut(channel, voltage);
+			cvOutPending[channel]++;
+			sendVoltageOut(channel, voltage, true);
 			switchGateOn(channel); // won't switch before the cv has been updated
 		}
 		else {
@@ -193,16 +206,18 @@ void CVEngine::sendNote(bool on, uint8_t channel, int16_t note) {
 	}
 }
 
-void CVEngine::sendVoltageOut(uint8_t channel, uint16_t voltage) {
+void CVEngine::sendVoltageOut(uint8_t channel, uint16_t voltage, bool gateReleasePending) {
 	uint32_t output = (uint32_t)(0b00110000 | (1 << channel)) << 24;
 	output |= (uint32_t)voltage << 8;
 	// if we have a physical oled then we need to send via the pic
 	if (deluge::hid::display::have_oled_screen) {
-		enqueueCVMessage(channel, output);
+		enqueueCVMessage(channel, output, gateReleasePending);
 	}
 	else {
 		R_RSPI_SendBasic32(SPI_CHANNEL_CV, output);
-		cvOutPending = false;
+		if (gateReleasePending) {
+			cvOutUpdated(channel);
+		}
 	}
 }
 
@@ -350,13 +365,15 @@ void CVEngine::updateRunOutput() {
 bool CVEngine::isTriggerClockOutputEnabled() {
 	return (gateChannels[WHICH_GATE_OUTPUT_IS_CLOCK].mode == GateType::SPECIAL);
 }
-void CVEngine::cvOutUpdated() {
-	cvOutPending = false;
+void CVEngine::cvOutUpdated(int32_t channel) {
+	if (channel >= 0 && channel < NUM_CV_CHANNELS && cvOutPending[channel]) {
+		cvOutPending[channel]--;
+	}
 	updateGateOutputs();
 }
 
 extern "C" {
-void cvSent() {
-	cvEngine.cvOutUpdated();
+void cvSent(int channel) {
+	cvEngine.cvOutUpdated(channel);
 }
 }

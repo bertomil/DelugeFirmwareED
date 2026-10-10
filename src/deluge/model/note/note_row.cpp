@@ -28,6 +28,7 @@
 #include "model/consequence/consequence_note_existence.h"
 #include "model/drum/drum_name.h"
 #include "model/drum/gate_drum.h"
+#include "model/drum/midi_drum.h" // EKLEN - JB Core MIDI
 #include "model/instrument/kit.h"
 #include "model/note/copied_note_row.h"
 #include "model/note/note.h"
@@ -131,6 +132,7 @@ Error NoteRow::beenCloned(ModelStackWithNoteRow* modelStack, bool shouldFlattenR
 						newNote->setProbability(oldNote->getProbability());
 						newNote->setVelocity(oldNote->getVelocity());
 						newNote->setLift(oldNote->getLift());
+						newNote->copyJBCoreCCValuesFrom(*oldNote); // EKLEN - JB Core MIDI
 					}
 				}
 
@@ -146,6 +148,7 @@ Error NoteRow::beenCloned(ModelStackWithNoteRow* modelStack, bool shouldFlattenR
 					newNote->setProbability(oldNote->getProbability());
 					newNote->setVelocity(oldNote->getVelocity());
 					newNote->setLift(oldNote->getLift());
+					newNote->copyJBCoreCCValuesFrom(*oldNote); // EKLEN - JB Core MIDI
 				}
 			}
 
@@ -172,6 +175,7 @@ Error NoteRow::beenCloned(ModelStackWithNoteRow* modelStack, bool shouldFlattenR
 					newNote->setProbability(oldNote->getProbability());
 					newNote->setVelocity(oldNote->getVelocity());
 					newNote->setLift(oldNote->getLift());
+					newNote->copyJBCoreCCValuesFrom(*oldNote); // EKLEN - JB Core MIDI
 				}
 			}
 		}
@@ -375,6 +379,7 @@ addNewNote:
 		}
 
 		Note* newNote = notes.getElement(i);
+		newNote->clearJBCoreCCValues(); // EKLEN - JB Core MIDI
 
 		newNote->setVelocity(((Instrument*)((Clip*)modelStack->getTimelineCounter())->output)->defaultVelocity);
 		newNote->setLift(kDefaultLiftValue);
@@ -601,6 +606,7 @@ addNewNote:
 			destNote->setVelocity(velocity);
 			destNote->setLift(kDefaultLiftValue);
 			destNote->setProbability(getDefaultProbability(modelStack));
+			destNote->clearJBCoreCCValues(); // EKLEN - JB Core MIDI
 
 			int32_t newLength;
 
@@ -740,6 +746,7 @@ int32_t NoteRow::attemptNoteAdd(int32_t pos, int32_t length, int32_t velocity, i
 	newNote->setVelocity(velocity);
 	newNote->setLift(kDefaultLiftValue);
 	newNote->setProbability(probability);
+	newNote->clearJBCoreCCValues(); // EKLEN - JB Core MIDI
 
 	// Record consequence
 	if (action) {
@@ -798,6 +805,7 @@ int32_t NoteRow::attemptNoteAddReversed(ModelStackWithNoteRow* modelStack, int32
 	newNote->setVelocity(velocity);
 	newNote->setLift(kDefaultLiftValue);
 	newNote->setProbability(getDefaultProbability(modelStack));
+	newNote->clearJBCoreCCValues(); // EKLEN - JB Core MIDI
 
 	modelStack->getTimelineCounter()->expectEvent();
 
@@ -1043,12 +1051,17 @@ modifyNote:
 		if (wrapping && reversed) {
 			int32_t probability = note->getProbability();
 			int32_t noteOnVelocity = note->getVelocity();
+			// EKLEN - JB Core MIDI >
+			uint8_t jbCoreCCValues[kNumJBCoreCCParameters];
+			memcpy(jbCoreCCValues, note->jbCoreCCValues, sizeof(jbCoreCCValues));
+			// EKLEN <
 			notes.deleteAtIndex(0, 1, false);
 			i = notes.getNumElements();
 			notes.insertAtIndex(i); // Shouldn't be able to fail.
 			note = notes.getElement(i);
 			note->setProbability(probability);
 			note->setVelocity(noteOnVelocity);
+			memcpy(note->jbCoreCCValues, jbCoreCCValues, sizeof(jbCoreCCValues)); // EKLEN - JB Core MIDI
 		}
 
 		note->pos = newNoteLeftPos; // This will stay the same if we're pingponging
@@ -1772,6 +1785,22 @@ Error NoteRow::changeNotesAcrossAllScreens(int32_t editPos, ModelStackWithNoteRo
 			case CORRESPONDING_NOTES_SET_PROBABILITY: {
 				thisNote->setProbability(changeValue);
 			} break;
+			// EKLEN >
+			// JB Core MIDI
+			default: {
+				if (changeType >= CORRESPONDING_NOTES_ADJUST_JB_CORE_CC_0
+				    && changeType < CORRESPONDING_NOTES_ADJUST_JB_CORE_CC_0 + kNumJBCoreCCParameters) {
+					int32_t parameter = changeType - CORRESPONDING_NOTES_ADJUST_JB_CORE_CC_0;
+					thisNote->jbCoreCCValues[parameter] =
+					    std::clamp<int32_t>(thisNote->jbCoreCCValues[parameter] + changeValue, 0, kMaxMIDIValue);
+				}
+				else if (changeType >= CORRESPONDING_NOTES_SET_JB_CORE_CC_0
+				         && changeType < CORRESPONDING_NOTES_SET_JB_CORE_CC_0 + kNumJBCoreCCParameters) {
+					int32_t parameter = changeType - CORRESPONDING_NOTES_SET_JB_CORE_CC_0;
+					thisNote->jbCoreCCValues[parameter] = std::clamp<int32_t>(changeValue, 0, kMaxMIDIValue);
+				}
+			} break;
+				// EKLEN <
 			}
 		}
 	}
@@ -2488,6 +2517,9 @@ storePendingNoteOn:
 					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].sampleSyncLength =
 					    thisNote->getLength();
 					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].ticksLate = ticksLate;
+					// EKLEN - JB Core MIDI
+					memcpy(pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].jbCoreCCValues,
+					       thisNote->jbCoreCCValues, sizeof(thisNote->jbCoreCCValues));
 					pendingNoteOnList->count++;
 				}
 				// FIXME: this is almost certainly a bad idea, we can't handle more than 8-10 note ons per render
@@ -2548,6 +2580,11 @@ storePendingNoteOn:
 
 					ModelStackWithThreeMainThings* modelStackWithThreeMainThings =
 					    modelStack->addOtherTwoThings(drum->toModControllable(), &paramManager);
+
+					// EKLEN - JB Core MIDI
+					if (drum->type == DrumType::MIDI) {
+						((MIDIDrum*)drum)->sendJBCoreCCs(thisNote->jbCoreCCValues);
+					}
 					drum->noteOn(modelStackWithThreeMainThings, thisNote->velocity, (Kit*)output, mpeValues,
 					             MIDI_CHANNEL_NONE, thisNote->length, ticksLate, samplesLate);
 				}
@@ -2832,6 +2869,7 @@ bool NoteRow::generateRepeats(ModelStackWithNoteRow* modelStack, uint32_t oldLoo
 					newNote->setProbability(oldNote->getProbability());
 					newNote->setVelocity(oldNote->getVelocity());
 					newNote->setLift(oldNote->getLift());
+					newNote->copyJBCoreCCValuesFrom(*oldNote); // EKLEN - JB Core MIDI
 
 					highestNoteIndex = iNew;
 				}
@@ -2879,6 +2917,7 @@ bool NoteRow::generateRepeats(ModelStackWithNoteRow* modelStack, uint32_t oldLoo
 					newNote->setProbability(oldNote->getProbability());
 					newNote->setVelocity(oldNote->getVelocity());
 					newNote->setLift(oldNote->getLift());
+					newNote->copyJBCoreCCValuesFrom(*oldNote); // EKLEN - JB Core MIDI
 
 					highestNoteIndex = iNew;
 				}
@@ -3235,6 +3274,7 @@ finishedNormalStuff:
 						newNote->setVelocity(velocity);
 						newNote->setLift(kDefaultLiftValue);
 						newNote->setProbability(kNumProbabilityValues);
+						newNote->clearJBCoreCCValues(); // EKLEN - JB Core MIDI
 					}
 
 					reader.exitTag("note");
@@ -3331,6 +3371,7 @@ useDefaultLift:
 				newNote->setVelocity(velocity);
 				newNote->setLift(lift);
 				newNote->setProbability(probability);
+				newNote->clearJBCoreCCValues(); // EKLEN - JB Core MIDI
 
 				numElementsToAllocateFor--;
 			}
@@ -3343,6 +3384,44 @@ getOut: {}
 			goto doReadNoteData;
 		}
 
+		// EKLEN - JB Core MIDI >
+		// Optional per-trigger JB Core data. Positions are included so this remains
+		// safe if a file is edited or notes are reordered; older firmware simply
+		// ignores this additional attribute and still loads noteDataWithLift.
+		else if (!strcmp(tagName, "jbCoreMidiData")) {
+			constexpr int32_t kJBCoreRecordHexLength = 8 + (kNumJBCoreCCParameters * 2);
+			if (!reader.prepareToReadTagOrAttributeValueOneCharAtATime()) {
+				goto finishedJBCoreData;
+			}
+
+			{
+				char const* firstChars = reader.readNextCharsOfTagOrAttributeValue(2);
+				if (!firstChars || *(uint16_t*)firstChars != charsToIntegerConstant('0', 'x')) {
+					goto finishedJBCoreData;
+				}
+			}
+
+			while (true) {
+				char const* hexChars = reader.readNextCharsOfTagOrAttributeValue(kJBCoreRecordHexLength);
+				if (!hexChars) {
+					break;
+				}
+
+				int32_t pos = hexToIntFixedLength(hexChars, 8);
+				int32_t noteIndex = notes.searchExact(pos);
+				Note* note = notes.getElement(noteIndex);
+				if (!note) {
+					continue;
+				}
+
+				for (int32_t parameter = 0; parameter < kNumJBCoreCCParameters; parameter++) {
+					uint8_t value = hexToIntFixedLength(&hexChars[8 + parameter * 2], 2);
+					note->jbCoreCCValues[parameter] = std::min<uint8_t>(value, kMaxMIDIValue);
+				}
+			}
+finishedJBCoreData: {}
+		}
+		// EKLEN <
 		else if (!strcmp(tagName, "expressionData")) {
 			paramManager.ensureExpressionParamSetExists();
 			ParamCollectionSummary* summary = paramManager.getExpressionParamSetSummary();
@@ -3418,6 +3497,39 @@ void NoteRow::writeToFile(Serializer& writer, int32_t drumIndex, InstrumentClip*
 		}
 		writer.write("\"");
 	}
+
+	// EKLEN - JB Core MIDI >
+	// Keep the established noteDataWithLift format unchanged and store only
+	// non-default JB Core values separately. This lets older firmware retain all
+	// notes even though it does not understand the extra trigger parameters.
+	bool hasJBCoreData = false;
+	for (int32_t n = 0; n < notes.getNumElements() && !hasJBCoreData; n++) {
+		Note* note = notes.getElement(n);
+		for (int32_t parameter = 0; parameter < kNumJBCoreCCParameters; parameter++) {
+			if (note->jbCoreCCValues[parameter]) {
+				hasJBCoreData = true;
+				break;
+			}
+		}
+	}
+
+	if (hasJBCoreData) {
+		writer.write("\n");
+		writer.printIndents();
+		writer.write("jbCoreMidiData=\"0x");
+		for (int32_t n = 0; n < notes.getNumElements(); n++) {
+			Note* note = notes.getElement(n);
+			char buffer[9];
+			intToHex(note->pos, buffer);
+			writer.write(buffer);
+			for (int32_t parameter = 0; parameter < kNumJBCoreCCParameters; parameter++) {
+				intToHex(note->jbCoreCCValues[parameter], buffer, 2);
+				writer.write(buffer);
+			}
+		}
+		writer.write("\"");
+	}
+	// EKLEN <
 
 	ExpressionParamSet* expressionParams = paramManager.getExpressionParamSet();
 	if (expressionParams && forKit) {
@@ -3869,6 +3981,7 @@ bool NoteRow::paste(ModelStackWithNoteRow* modelStack, CopiedNoteRow* copiedNote
 		noteDest->velocity = noteSource->velocity;
 		noteDest->probability = noteSource->probability;
 		noteDest->lift = noteSource->lift;
+		noteDest->copyJBCoreCCValuesFrom(*noteSource); // EKLEN - JB Core MIDI
 
 		minPos = newPos + newLength;
 	}
@@ -4076,6 +4189,7 @@ Error NoteRow::appendNoteRow(ModelStackWithNoteRow* thisModelStack, ModelStackWi
 				newNote->setProbability(oldNote->getProbability());
 				newNote->setVelocity(oldNote->getVelocity());
 				newNote->setLift(oldNote->getLift());
+				newNote->copyJBCoreCCValuesFrom(*oldNote); // EKLEN - JB Core MIDI
 			}
 		}
 	}
@@ -4107,6 +4221,7 @@ Error NoteRow::appendNoteRow(ModelStackWithNoteRow* thisModelStack, ModelStackWi
 			newNote->velocity = oldNote->velocity;
 			newNote->setLift(oldNote->getLift());
 			newNote->probability = oldCondition;
+			newNote->copyJBCoreCCValuesFrom(*oldNote); // EKLEN - JB Core MIDI
 		}
 	}
 

@@ -33,6 +33,7 @@ public:
 	void armNextSection(int32_t oldSection, int32_t numRepetitions = -1);
 	void doLaunch(bool isFillLaunch);
 	void scheduleLaunchTiming(int64_t atTickCount, int32_t numRepeatsUntil, int32_t armedLaunchLengthForOneRepeat);
+	void scheduleClipStopAfterRepeats(Clip* clip, int32_t repeats); // EKLEN - Clip launch repeats
 	int32_t getNumSixteenthNotesRemainingTilLaunch();
 	void scheduleFillEvent(Clip* clip, int64_t atTickCount);
 	void cancelAllLaunchScheduling();

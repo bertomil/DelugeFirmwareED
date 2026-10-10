@@ -1130,6 +1130,7 @@ ramError:
 					newNote->velocity = noteToCopy->velocity;
 					newNote->probability = noteToCopy->probability;
 					newNote->lift = noteToCopy->lift;
+					newNote->copyJBCoreCCValuesFrom(*noteToCopy); // EKLEN - JB Core MIDI
 				}
 			}
 		}
@@ -2294,6 +2295,99 @@ void InstrumentClipView::adjustVelocity(int32_t velocityChange) {
 	reassessAllAuditionStatus();
 }
 
+// EKLEN - JB Core MIDI >
+// The two modulation encoders and the vertical encoder edit the three extra
+// values while JB Core triggers are held. Values remain attached to notes, so
+// wrap editing and Automation View use the same undoable operation.
+bool InstrumentClipView::adjustJBCoreCC(int32_t parameter, int32_t valueChange) {
+	if (parameter < 0 || parameter >= kNumJBCoreCCParameters || getCurrentOutputType() != OutputType::KIT) {
+		return false;
+	}
+
+	char modelStackMemory[MODEL_STACK_MAX_SIZE];
+	ModelStackWithTimelineCounter* modelStack = currentSong->setupModelStackWithCurrentClip(modelStackMemory);
+	Action* action = nullptr;
+	bool handled = false;
+	int32_t displayedValue = -1;
+	int32_t displayedCC = -1;
+
+	for (int32_t i = 0; i < kEditPadPressBufferSize; i++) {
+		if (!editPadPresses[i].isActive) {
+			continue;
+		}
+
+		int32_t noteRowIndex;
+		NoteRow* noteRow =
+		    getCurrentInstrumentClip()->getNoteRowOnScreen(editPadPresses[i].yDisplay, currentSong, &noteRowIndex);
+		if (!noteRow || !noteRow->drum || noteRow->drum->type != DrumType::MIDI) {
+			continue;
+		}
+
+		MIDIDrum* midiDrum = static_cast<MIDIDrum*>(noteRow->drum);
+		if (!midiDrum->isJBCoreRow() || midiDrum->note * kNumJBCoreCCParameters + parameter > kJBCoreMaxCCNumber) {
+			continue;
+		}
+
+		if (!action) {
+			action = actionLogger.getNewAction(ActionType::NOTE_EDIT, ActionAddition::ALLOWED);
+			if (!action) {
+				return true;
+			}
+		}
+
+		handled = true;
+		editPadPresses[i].deleteOnDepress = false;
+		ModelStackWithNoteRow* modelStackWithNoteRow =
+		    modelStack->addNoteRow(getCurrentInstrumentClip()->getNoteRowId(noteRow, noteRowIndex), noteRow);
+
+		int32_t noteIndex = noteRow->notes.search(editPadPresses[i].intendedPos, GREATER_OR_EQUAL);
+		Note* note = noteRow->notes.getElement(noteIndex);
+		int32_t endPos =
+		    editPadPresses[i].intendedPos + (editPadPresses[i].isBlurredSquare ? editPadPresses[i].intendedLength : 1);
+		while (note && note->pos < endPos) {
+			noteRow->changeNotesAcrossAllScreens(note->pos, modelStackWithNoteRow, action,
+			                                     CORRESPONDING_NOTES_ADJUST_JB_CORE_CC_0 + parameter, valueChange);
+
+			int32_t value = note->jbCoreCCValues[parameter];
+			if (displayedValue < 0) {
+				displayedValue = value;
+			}
+			else if (displayedValue != value) {
+				displayedValue = 255;
+			}
+			midiDrum->sendJBCoreCCs(note->jbCoreCCValues);
+
+			if (!editPadPresses[i].isBlurredSquare) {
+				break;
+			}
+			note = noteRow->notes.getElement(++noteIndex);
+		}
+		displayedCC = midiDrum->note * kNumJBCoreCCParameters + parameter;
+	}
+
+	if (handled) {
+		getCurrentInstrumentClip()->expectEvent();
+		uiNeedsRendering(this, 0xFFFFFFFF, 0);
+
+		char buffer[32];
+		strcpy(buffer, "CC ");
+		intToString(displayedCC, buffer + strlen(buffer));
+		strcat(buffer, displayedValue == 255 ? ": multiple" : ": ");
+		if (displayedValue != 255) {
+			intToString(displayedValue < 0 ? 0 : displayedValue, buffer + strlen(buffer));
+		}
+		if (display->haveOLED()) {
+			display->popupText(buffer);
+		}
+		else {
+			display->displayPopup(buffer, 0, true);
+		}
+	}
+
+	return handled;
+}
+// EKLEN <
+
 // determines whether or not you're trying to adjust the velocities of multiple notes
 // with different starting velocities (prior to adjustment)
 // used to determine whether to display the updated velocity value or a generalized
@@ -3141,6 +3235,24 @@ void InstrumentClipView::sendAuditionNote(bool on, uint8_t yDisplay, uint8_t vel
 					    && !modelStackWithNoteRow->getNoteRow()->paramManager.containsAnyMainParamCollections()) {
 						FREEZE_WITH_ERROR("E325"); // Trying to catch an E313 that Vinz got
 					}
+					// EKLEN >
+					// Auditioning an entered JB Core trigger uses that trigger's stored values before sounding the
+					// note.
+					if (drum->type == DrumType::MIDI) {
+						for (int32_t i = 0; i < kEditPadPressBufferSize; i++) {
+							if (editPadPresses[i].isActive && editPadPresses[i].yDisplay == yDisplay) {
+								int32_t noteIndex =
+								    noteRowOnCurrentClip->notes.search(editPadPresses[i].intendedPos, GREATER_OR_EQUAL);
+								Note* note = noteRowOnCurrentClip->notes.getElement(noteIndex);
+								if (note
+								    && note->pos < editPadPresses[i].intendedPos + editPadPresses[i].intendedLength) {
+									static_cast<MIDIDrum*>(drum)->sendJBCoreCCs(note->jbCoreCCValues);
+								}
+								break;
+							}
+						}
+					}
+					// EKLEN <
 					((Kit*)instrument)->beginAuditioningforDrum(modelStackWithNoteRow, drum, velocity, zeroMPEValues);
 				}
 				else {
@@ -4680,6 +4792,15 @@ ActionResult InstrumentClipView::verticalEncoderAction(int32_t offset, bool inCa
 		return ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE; // Allow sometimes.
 	}
 
+	// EKLEN >
+	// With a JB Core trigger held, the otherwise scrolling vertical encoder
+	// becomes parameter three.
+	if (!Buttons::isButtonPressed(deluge::hid::button::Y_ENC) && !Buttons::isShiftButtonPressed()
+	    && isUIModeActiveExclusively(UI_MODE_NOTES_PRESSED) && adjustJBCoreCC(2, offset)) {
+		return ActionResult::DEALT_WITH;
+	}
+	// EKLEN <
+
 	// If encoder button pressed
 	if (Buttons::isButtonPressed(deluge::hid::button::Y_ENC)) {
 		// User may be trying to move a noteCode...
@@ -5723,6 +5844,15 @@ void InstrumentClipView::dontDeleteNotesOnDepress() {
 void InstrumentClipView::modEncoderAction(int32_t whichModEncoder, int32_t offset) {
 	dontDeleteNotesOnDepress();
 
+	// EKLEN - JB Core MIDI >
+	// Both modulation encoders are free while a trigger is held, so use them for
+	// JB Core parameters one and two.
+	if (whichModEncoder < 2 && isUIModeActiveExclusively(UI_MODE_NOTES_PRESSED)
+	    && adjustJBCoreCC(whichModEncoder, offset)) {
+		return;
+	}
+	// EKLEN <
+
 	InstrumentClip* clip = getCurrentInstrumentClip();
 
 	char modelStackMemory[MODEL_STACK_MAX_SIZE];
@@ -5852,6 +5982,9 @@ justDisplayOldNumNotes:
 						note->probability = noteRow->getDefaultProbability(modelStack);
 						note->velocity = ((Instrument*)clip->output)->defaultVelocity;
 						note->lift = kDefaultLiftValue;
+						// EKLEN - JB Core MIDI >
+						note->clearJBCoreCCValues();
+						// EKLEN <
 					}
 
 					// Just make sure final note isn't too long

@@ -1041,6 +1041,10 @@ void SessionView::clipPressEnded() {
 			redrawNumericDisplay();
 		}
 	}
+	// EKLEN - Clip launch repeats
+	else if (display->haveOLED()) {
+		deluge::hid::display::OLED::removePopup();
+	}
 
 	if (currentUIMode == UI_MODE_EXPLODE_ANIMATION) {
 		return;
@@ -1049,6 +1053,8 @@ void SessionView::clipPressEnded() {
 	// the right model stack with param (otherwise midi follow mode will think you're still in a clip)
 	selectedClipYDisplay = 255;
 	clipWasSelectedWithShift = false;
+	// EKLEN - Disable clip launch when clip is pressed with white shift
+	clipWasSelectedWithGridSecondaryShift = false;
 	// Cancel copying clip
 	if (gridFirstPressedX != -1 && gridFirstPressedY != -1 && gridSecondPressedX != -1 && gridSecondPressedY != -1) {
 		display->popupTextTemporary("COPY CANCELED");
@@ -1227,6 +1233,35 @@ void SessionView::drawSectionRepeatNumber() {
 	}
 }
 
+// EKLEN - Clip launch repeats (whole function copied from drawSectionRepeatNumber() and modified)
+void SessionView::drawClipRepeatNumber(Clip* clip) {
+	char const* outputText;
+	if (display->haveOLED()) {
+		char buffer[24];
+		outputText = buffer;
+		strcpy(buffer, "Clip repeats: ");
+		if (clip->launchRepeats == 0) {
+			strcpy(&buffer[14], "infinite");
+		}
+		else {
+			intToString(clip->launchRepeats, &buffer[14]);
+		}
+
+		display->popupText(outputText);
+	}
+	else {
+		char buffer[5];
+		if (clip->launchRepeats == 0) {
+			outputText = "INFI";
+		}
+		else {
+			intToString(clip->launchRepeats, buffer);
+			outputText = buffer;
+		}
+		display->setText(outputText, true, 255, true);
+	}
+}
+
 void SessionView::commandChangeSectionRepeats(int8_t offset) {
 	if (performActionOnSectionPadRelease) {
 		beginEditingSectionRepeatsNum();
@@ -1242,6 +1277,25 @@ void SessionView::commandChangeSectionRepeats(int8_t offset) {
 		}
 		drawSectionRepeatNumber();
 	}
+}
+
+// EKLEN - Clip launch repeats
+void SessionView::commandChangeClipRepeats(int8_t offset) {
+	Clip* clip = getClipForLayout();
+	if (clip == nullptr) {
+		return;
+	}
+
+	performActionOnPadRelease = false;
+	clip->launchRepeats += offset;
+	if (clip->launchRepeats < 0) {
+		clip->launchRepeats = 0;
+	}
+	else if (clip->launchRepeats > 9999) {
+		clip->launchRepeats = 9999;
+	}
+	session.scheduleClipStopAfterRepeats(clip, clip->launchRepeats);
+	drawClipRepeatNumber(clip);
 }
 
 void SessionView::commandChangeClipPreset(int8_t offset) {
@@ -1341,6 +1395,12 @@ void SessionView::editNumRepeatsTilLaunch(int32_t offset) {
 }
 
 ActionResult SessionView::horizontalEncoderAction(int32_t offset) {
+	// EKLEN - Clip launch repeats (whole function copied from editNumRepeatsTilLaunch() and modified)
+	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW && gridSecondPadInactive()) {
+		commandChangeClipRepeats(offset);
+		return ActionResult::DEALT_WITH;
+	}
+
 	if (currentSong->sessionLayout == SessionLayoutType::SessionLayoutTypeGrid) {
 		return gridHandleScroll(offset, 0);
 	}
@@ -3892,6 +3952,12 @@ void SessionView::gridToggleClipPlay(Clip* clip, bool instant) {
 	session.toggleClipStatus(clip, nullptr, instant, kInternalButtonPressLatency);
 }
 
+// EKLEN - Disable clip launch when clip is pressed with white shift (this boolean)
+bool SessionView::gridSecondaryShiftHeld() {
+	return currentSong->sessionLayout == SessionLayoutType::SessionLayoutTypeGrid
+	       && matrixDriver.isPadPressed(kDisplayWidth + 1, GridMode::WHITE);
+}
+
 ActionResult SessionView::gridHandlePads(int32_t x, int32_t y, int32_t on) {
 	// Except for the path to sectionPadAction in the original function all paths contained this check. Can probably
 	// be refactored
@@ -4316,6 +4382,25 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 }
 
 ActionResult SessionView::gridHandlePadsLaunchImmediate(int32_t x, int32_t y, int32_t on, Clip* clip) {
+	if (gridSecondaryShiftHeld() || clipWasSelectedWithGridSecondaryShift) {
+		if (on) {
+			gridFirstPressedX = x;
+			gridFirstPressedY = y;
+			currentUIMode = UI_MODE_CLIP_PRESSED_IN_SONG_VIEW;
+			performActionOnPadRelease = false;
+			selectedClipTimePressed = AudioEngine::audioSampleTimer;
+			clipWasSelectedWithGridSecondaryShift = true;
+			currentSong->setCurrentClip(clip);
+			view.displayOutputName(clip->output, true, clip, true);
+			view.setActiveModControllableTimelineCounter(clip);
+		}
+		else if (gridFirstPressedX == x && gridFirstPressedY == y && clipWasSelectedWithGridSecondaryShift) {
+			clipPressEnded();
+		}
+
+		return ActionResult::ACTIONED_AND_CAUSED_CHANGE;
+	}
+
 	// From here all actions only happen on press
 	if (!on) {
 		return ActionResult::DEALT_WITH;
@@ -4341,6 +4426,8 @@ ActionResult SessionView::gridHandlePadsLaunchWithSelection(int32_t x, int32_t y
 			currentUIMode = UI_MODE_CLIP_PRESSED_IN_SONG_VIEW;
 			performActionOnPadRelease = true;
 			selectedClipTimePressed = AudioEngine::audioSampleTimer;
+			// EKLEN - Disable clip launch when clip is pressed with white shift (one row below)
+			clipWasSelectedWithGridSecondaryShift = gridSecondaryShiftHeld();
 			currentSong->setCurrentClip(clip);
 			// EKLEN - display clip length
 			// added ", true);"
@@ -4357,7 +4444,8 @@ ActionResult SessionView::gridHandlePadsLaunchWithSelection(int32_t x, int32_t y
 	else {
 		if (gridFirstPressedX == x && gridFirstPressedY == y) {
 			if (isUIModeActive(UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) && performActionOnPadRelease
-			    && AudioEngine::audioSampleTimer - selectedClipTimePressed < kShortPressTime) {
+			    && AudioEngine::audioSampleTimer - selectedClipTimePressed < kShortPressTime
+			    && !clipWasSelectedWithGridSecondaryShift) {
 
 				gridHandlePadsLaunchToggleArming(clip, false);
 			}
