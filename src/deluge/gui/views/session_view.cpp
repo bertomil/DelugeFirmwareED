@@ -801,7 +801,7 @@ startHoldingDown:
 						performActionOnPadRelease = true;
 						selectedClipTimePressed = AudioEngine::audioSampleTimer;
 						view.setActiveModControllableTimelineCounter(clip);
-						// EKLEN - display clip length
+						// EKLEN - Display clip length
 						// Song View pad-hold display opts in
 						// added ", true);"
 						view.displayOutputName(clip->output, true, clip, true);
@@ -1918,7 +1918,7 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 
 	UI* currentUI = getCurrentUI();
 	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) {
-		// EKLEN - display clip length
+		// EKLEN - Display clip length
 		// added ", true);"
 		view.displayOutputName(getCurrentClip()->output, true, getCurrentClip(), true);
 	}
@@ -2090,13 +2090,13 @@ void SessionView::renderViewDisplay() {
 	currentSong->getCurrentRootNoteAndScaleName(rootNoteAndScaleName);
 	displayCurrentRootNoteAndScaleName(canvas, rootNoteAndScaleName, false);
 
-	// EKLEN - display playhead position
+	// EKLEN - Display playhead position
 	displayPlayheadPosition(true);
 
 	deluge::hid::display::OLED::markChanged();
 }
 
-// EKLEN - display playhead position
+// EKLEN - Display playhead position
 void SessionView::displayPlayheadPosition(bool force) {
 	constexpr int32_t kPlayheadPositionXMin = 0;
 	constexpr int32_t kPlayheadPositionXMax = 75;
@@ -2319,7 +2319,7 @@ void SessionView::graphicsRoutine() {
 
 	if (display->haveOLED()) {
 		displayPotentialTempoChange(this);
-		// EKLEN - display playhead position
+		// EKLEN - Display playhead position
 		displayPlayheadPosition();
 	}
 
@@ -3319,7 +3319,7 @@ void SessionView::gridRenderActionModes(int32_t y, RGB image[][kDisplayWidth + k
 		modeColour = colours::blue; // Blue
 		break;
 	}
-	// EKLEN - section launch shift
+	// EKLEN - Section launch shift
 	case GridMode::WHITE: {
 		modeActive = matrixDriver.isPadPressed(kDisplayWidth + 1, WHITE);
 		modeColour = colours::white; // White
@@ -4147,7 +4147,7 @@ ActionResult SessionView::gridHandlePadsEdit(int32_t x, int32_t y, int32_t on, C
 				// while holding section pad and repeats popup is displayed
 				deluge::hid::display::OLED::removePopup();
 			}
-			// EKLEN - display clip length
+			// EKLEN - Display clip length
 			// added ", true);"
 			view.displayOutputName(clip->output, true, clip, true);
 
@@ -4260,7 +4260,7 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 		}
 
 		if (on) {
-			// EKLEN - launch section only when shift held
+			// EKLEN - Launch section only when shift held
 			bool sectionLaunchShiftHeld = matrixDriver.isPadPressed(kDisplayWidth + 1, GridMode::WHITE);
 			if (!sectionLaunchShiftHeld) {
 				return ActionResult::DEALT_WITH;
@@ -4279,7 +4279,7 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 			Output* track = gridTrackFromX(x, maxTrack);
 
 			// holding one clip, then pressing a second empty clip
-			// EKLEN - added "false &&" in line below for blockking clip copy option in green mode
+			// EKLEN - Added "false &&" in line below for blockking clip copy option in green mode
 			if (false && (gridFirstPressedX != -1 && gridFirstPressedY != -1)
 			    && (gridSecondPressedX == -1 || gridSecondPressedY == -1)) {
 				performActionOnPadRelease = false; // doing a copy paste, so don't launch clips
@@ -4312,7 +4312,7 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 			// lastly create a new clip, either on an existing track or on a new one
 			else if (currentUIMode == UI_MODE_NONE) {
 
-				// EKLEN - block creating new clip in green mode
+				// EKLEN - Block creating new clip in green mode
 				return ActionResult::DEALT_WITH;
 
 				gridFirstPressedX = x;
@@ -4333,7 +4333,7 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 					// Allow clip control (selection) if still holding it
 					if (x == gridFirstPressedX && y == gridFirstPressedY) {
 						currentUIMode = UI_MODE_CLIP_PRESSED_IN_SONG_VIEW;
-						// EKLEN - display clip length
+						// EKLEN - Display clip length
 						// added ", true);"
 						view.displayOutputName(clip->output, true, clip, true);
 						display->cancelPopup();
@@ -4429,7 +4429,7 @@ ActionResult SessionView::gridHandlePadsLaunchWithSelection(int32_t x, int32_t y
 			// EKLEN - Disable clip launch when clip is pressed with white shift (one row below)
 			clipWasSelectedWithGridSecondaryShift = gridSecondaryShiftHeld();
 			currentSong->setCurrentClip(clip);
-			// EKLEN - display clip length
+			// EKLEN - Display clip length
 			// added ", true);"
 			view.displayOutputName(clip->output, true, clip, true);
 			// this needs to be called after the current clip is set in order to ensure that

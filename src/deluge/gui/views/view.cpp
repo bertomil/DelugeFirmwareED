@@ -1925,7 +1925,7 @@ char const* View::getReverbPresetDisplayName(int32_t preset) {
 	return deluge::l10n::get(presetReverbNames[preset]);
 }
 
-// EKLEN - display clip length
+// EKLEN - Display clip length
 // added "bool showClipLength"
 void View::displayOutputName(Output* output, bool doBlink, Clip* clip, bool showClipLength) {
 	int32_t channel, channelSuffix;
@@ -1943,14 +1943,14 @@ void View::displayOutputName(Output* output, bool doBlink, Clip* clip, bool show
 			break;
 		}
 	}
-	// EKLEN - display clip length
+	// EKLEN - Display clip length
 	// added "showClipLength"
 	drawOutputNameFromDetails(output->type, channel, channelSuffix, output->name.get(), output->name.isEmpty(),
 	                          editedByUser, doBlink, clip, showClipLength);
 	deluge::hid::display::OLED::markChanged();
 }
 
-// EKLEN - display clip length
+// EKLEN - Display clip length
 // added "bool showClipLength"
 void View::drawOutputNameFromDetails(OutputType outputType, int32_t channel, int32_t channelSuffix, char const* name,
                                      bool isNameEmpty, bool editedByUser, bool doBlink, Clip* clip,
@@ -1998,7 +1998,7 @@ void View::drawOutputNameFromDetails(OutputType outputType, int32_t channel, int
 		if (clip && clip->type == ClipType::INSTRUMENT) {
 			instrumentClip = (InstrumentClip*)clip;
 		}
-		// EKLEN - bug fix
+		// EKLEN - Bug fix
 		// "clip" renamed to "instrumentClip" in the if statement above to avoid confusion with the "clip" parameter of this function
 		setLedState(LED::KEYBOARD, (instrumentClip && instrumentClip->onKeyboardScreen));
 		setLedState(LED::SCALE_MODE,
@@ -2022,7 +2022,7 @@ void View::drawOutputNameFromDetails(OutputType outputType, int32_t channel, int
 		hid::display::OLED::clearMainImage();
 
 		char const* outputTypeText = getOutputTypeName(outputType, channel);
-		// EKLEN start - display clip length
+		// EKLEN - Display clip length >
 		DEF_STACK_STRING_BUF(outputTypeWithLength, 20);
 		if (showClipLength && clip && clip->type == ClipType::INSTRUMENT
 		    && (outputType == OutputType::SYNTH || outputType == OutputType::KIT || outputType == OutputType::MIDI_OUT
@@ -2037,7 +2037,7 @@ void View::drawOutputNameFromDetails(OutputType outputType, int32_t channel, int
 				outputTypeText = outputTypeWithLength.c_str();
 			}
 		}
-		// EKLEN end
+		// EKLEN <
 
 #if OLED_MAIN_HEIGHT_PIXELS == 64
 		int32_t yPos = OLED_MAIN_TOPMOST_PIXEL + 12;

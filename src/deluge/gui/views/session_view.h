@@ -40,7 +40,7 @@ enum SessionGridMode : uint8_t {
 extern float getTransitionProgress();
 
 constexpr uint32_t kGridHeight = kDisplayHeight;
-// EKLEN - grid timeline playhead
+// EKLEN - Grid timeline playhead
 // Reserve the bottom physical grid row for a fixed timeline
 constexpr uint32_t kGridTimelineY = 0;
 constexpr uint32_t kGridClipHeight = kDisplayHeight - 1;

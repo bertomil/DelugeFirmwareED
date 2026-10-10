@@ -94,7 +94,7 @@ public:
 	void editPadAction(bool state, uint8_t yDisplay, uint8_t xDisplay, uint32_t xZoom);
 	void adjustVelocity(int32_t velocityChange);
 	// EKLEN - JB Core MIDI >
-	// Edit one of the three JB Core values on held triggers; returns false when no eligible MIDI row is held.
+	// Edit one of the three JB Core values on held triggers; returns false when no eligible MIDI row is held
 	bool adjustJBCoreCC(int32_t parameter, int32_t valueChange);
 	// EKLEN <
 	void updateVelocityValue(int32_t& velocityValue, int32_t newVelocity);

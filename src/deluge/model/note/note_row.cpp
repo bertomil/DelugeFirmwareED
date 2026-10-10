@@ -1785,7 +1785,7 @@ Error NoteRow::changeNotesAcrossAllScreens(int32_t editPos, ModelStackWithNoteRo
 			case CORRESPONDING_NOTES_SET_PROBABILITY: {
 				thisNote->setProbability(changeValue);
 			} break;
-			// EKLEN >
+			// EKLEN - JB Core MIDI >
 			// JB Core MIDI
 			default: {
 				if (changeType >= CORRESPONDING_NOTES_ADJUST_JB_CORE_CC_0

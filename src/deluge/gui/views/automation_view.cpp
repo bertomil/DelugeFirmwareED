@@ -878,8 +878,8 @@ void AutomationView::renderAutomationOverview(ModelStackWithTimelineCounter* mod
 				occupancyMask[yDisplay][xDisplay] = 64;
 			}
 
-			// EKLEN >
-			// JB Core rows add three per-trigger editors beside velocity without
+			// EKLEN - JB Core MIDI >
+			// Added three per-trigger editors beside velocity without
 			// exposing generic KIT-row CC automation.
 			if (outputType == OutputType::KIT && isJBCoreDrum(((Kit*)clip->output)->selectedDrum)
 			    && yDisplay == kJBCoreShortcutY && xDisplay >= kJBCoreShortcutFirstX
@@ -1082,12 +1082,11 @@ void AutomationView::renderNoteColumn(ModelStackWithNoteRow* modelStackWithNoteR
 	if (automationParamType == AutomationParamType::NOTE_VELOCITY) {
 		value = squareInfo.averageVelocity;
 	}
-	// EKLEN >
+	// EKLEN - JB Core MIDI >
 	else {
 		int32_t parameter = getJBCoreParameterIndex(automationParamType);
 		if (parameter >= 0) {
-			// JB Core values belong to note heads rather than to a continuous
-			// AutoParam lane.
+			// Core values belong to note heads rather than to a continuous AutoParam lane
 			NoteRow* noteRow = modelStackWithNoteRow->getNoteRow();
 			int32_t noteIndex = noteRow->notes.search(squareInfo.squareStartPos, GREATER_OR_EQUAL);
 			Note* note = noteRow->notes.getElement(noteIndex);
@@ -2618,9 +2617,8 @@ bool AutomationView::toggleAutomationPadSelectionMode(ModelStackWithAutoParam* m
 // overview or by using a grid shortcut combo
 void AutomationView::handleParameterSelection(Clip* clip, Output* output, OutputType outputType, int32_t xDisplay,
                                               int32_t yDisplay) {
-	// EKLEN >
-	// Enter one of the three per-trigger JB Core editors from temporary row-2,
-	// columns-4-to-6 shortcuts.
+	// EKLEN - JB Core MIDI >
+	// Enter one of the three per-trigger JB Core editors from temporary row-2, columns-4-to-6 shortcuts
 	if (clip->type == ClipType::INSTRUMENT && outputType == OutputType::KIT && !getAffectEntire()
 	    && yDisplay == kJBCoreShortcutY && xDisplay >= kJBCoreShortcutFirstX
 	    && xDisplay < kJBCoreShortcutFirstX + kNumJBCoreCCParameters
@@ -2775,7 +2773,7 @@ void AutomationView::noteEditPadAction(ModelStackWithNoteRow* modelStackWithNote
 			velocityEditPadAction(modelStackWithNoteRow, noteRow, clip, x, y, velocity, effectiveLength, squareInfo);
 		}
 	}
-	// EKLEN >
+	// EKLEN - JB Core MIDI >
 	else if (getJBCoreParameterIndex(automationParamType) >= 0) {
 		jbCoreEditPadAction(modelStackWithNoteRow, noteRow, x, y, velocity, squareInfo);
 	}
@@ -3046,7 +3044,6 @@ void AutomationView::velocityEditPadAction(ModelStackWithNoteRow* modelStackWith
 				renderDisplay(leftPadSelectedX == x ? leftPadSelectedVelocity : rightPadSelectedVelocity);
 			}
 		}
-		// EKLEN >
 		else {
 			if (velocity) {
 				renderDisplay(showNewVelocity ? newVelocity : squareInfo.averageVelocity);
@@ -3882,7 +3879,7 @@ ActionResult AutomationView::horizontalEncoderAction(int32_t offset) {
 				uiNeedsRendering(this, 0xFFFFFFFF, 0);
 			}
 		}
-		else {
+		else { // EKLEN - JB Core MIDI >
 			int32_t parameter = getJBCoreParameterIndex(automationParamType);
 			if (parameter >= 0 && isUIModeActiveExclusively(UI_MODE_NOTES_PRESSED)) {
 				instrumentClipView.adjustJBCoreCC(parameter, offset);
@@ -5066,8 +5063,8 @@ void AutomationView::getLastSelectedGlobalParamArrayPosition(Clip* clip) {
 void AutomationView::noteRowChanged(InstrumentClip* clip, NoteRow* noteRow) {
 	instrumentClipView.noteRowChanged(clip, noteRow);
 
-	// EKLEN >
-	// A JB Core editor is row-specific; leave it when the newly selected row cannot supply the mapped CC triplet.
+	// EKLEN - JB Core MIDI >
+	// Editor is row-specific; leave it when the newly selected row cannot supply the mapped CC triplet
 	if (getJBCoreParameterIndex(automationParamType) >= 0 && (!noteRow || !isJBCoreDrum(noteRow->drum))) {
 		initParameterSelection();
 		uiNeedsRendering(this);
@@ -5783,7 +5780,7 @@ void AutomationView::setAutomationParamType() {
 		    && (clip->lastSelectedParamShortcutY == kVelocityShortcutY)) {
 			automationParamType = AutomationParamType::NOTE_VELOCITY;
 		}
-		// EKLEN - JB Core >
+		// EKLEN - JB Core MIDI >
 		else if (clip->type == ClipType::INSTRUMENT && clip->output->type == OutputType::KIT
 		         && isJBCoreDrum(static_cast<Kit*>(clip->output)->selectedDrum)
 		         && clip->lastSelectedParamShortcutY == kJBCoreShortcutY

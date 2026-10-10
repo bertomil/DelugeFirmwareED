@@ -3235,7 +3235,7 @@ void InstrumentClipView::sendAuditionNote(bool on, uint8_t yDisplay, uint8_t vel
 					    && !modelStackWithNoteRow->getNoteRow()->paramManager.containsAnyMainParamCollections()) {
 						FREEZE_WITH_ERROR("E325"); // Trying to catch an E313 that Vinz got
 					}
-					// EKLEN >
+					// EKLEN - JB Core MIDI >
 					// Auditioning an entered JB Core trigger uses that trigger's stored values before sounding the
 					// note.
 					if (drum->type == DrumType::MIDI) {
@@ -4792,7 +4792,7 @@ ActionResult InstrumentClipView::verticalEncoderAction(int32_t offset, bool inCa
 		return ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE; // Allow sometimes.
 	}
 
-	// EKLEN >
+	// EKLEN - JB Core MIDI >
 	// With a JB Core trigger held, the otherwise scrolling vertical encoder
 	// becomes parameter three.
 	if (!Buttons::isButtonPressed(deluge::hid::button::Y_ENC) && !Buttons::isShiftButtonPressed()
