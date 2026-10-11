@@ -3506,7 +3506,7 @@ void NoteRow::writeToFile(Serializer& writer, int32_t drumIndex, InstrumentClip*
 	for (int32_t n = 0; n < notes.getNumElements() && !hasJBCoreData; n++) {
 		Note* note = notes.getElement(n);
 		for (int32_t parameter = 0; parameter < kNumJBCoreCCParameters; parameter++) {
-			if (note->jbCoreCCValues[parameter]) {
+			if (note->jbCoreCCValues[parameter] != kJBCoreCCDefaultValues[parameter]) {
 				hasJBCoreData = true;
 				break;
 			}

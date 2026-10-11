@@ -322,21 +322,19 @@ constexpr uint8_t kVelocityShortcutX = 15;
 constexpr uint8_t kVelocityShortcutY = 1;
 
 // EKLEN - JB Core MIDI >
-// Automation View shortcuts: user-facing columns 4-6 on the velocity shortcut row
+// Automation View shortcuts: user-facing columns 4-7 on the velocity shortcut row
 constexpr uint8_t kJBCoreShortcutFirstX = 3;
 constexpr uint8_t kJBCoreShortcutY = 1;
 
-// Translate the three note-editor enum values into their zero-based JB Core
-// parameter index.
+// Translate the four note-editor enum values into their zero-based JB Core parameter index
 static int32_t getJBCoreParameterIndex(AutomationParamType type) {
-	if (type >= AutomationParamType::NOTE_JB_CORE_CC_1 && type <= AutomationParamType::NOTE_JB_CORE_CC_3) {
+	if (type >= AutomationParamType::NOTE_JB_CORE_CC_1 && type <= AutomationParamType::NOTE_JB_CORE_CC_4) {
 		return static_cast<int32_t>(type) - static_cast<int32_t>(AutomationParamType::NOTE_JB_CORE_CC_1);
 	}
 	return -1;
 }
 
-// Only channel-11 MIDI rows whose note maps below the channel-mode CC range
-// expose the extra editors.
+// Only channel-11 MIDI rows whose note maps below the channel-mode CC range expose the extra editors
 static bool isJBCoreDrum(Drum* drum) {
 	if (!drum || drum->type != DrumType::MIDI) {
 		return false;
@@ -345,7 +343,23 @@ static bool isJBCoreDrum(Drum* drum) {
 	return midiDrum->isJBCoreRow()
 	       && midiDrum->note * kNumJBCoreCCParameters + kNumJBCoreCCParameters - 1 <= kJBCoreMaxCCNumber;
 }
-AutomationView automationView{}; // EKLEN <
+
+// Average the per-trigger value represented by one Automation View square.
+static int32_t getAverageJBCoreValue(NoteRow* noteRow, SquareInfo const& squareInfo, int32_t parameter) {
+	int32_t noteIndex = noteRow->notes.search(squareInfo.squareStartPos, GREATER_OR_EQUAL);
+	Note* note = noteRow->notes.getElement(noteIndex);
+	int32_t sum = 0;
+	int32_t count = 0;
+
+	while (note && note->pos < squareInfo.squareEndPos) {
+		sum += note->jbCoreCCValues[parameter];
+		count++;
+		note = noteRow->notes.getElement(++noteIndex);
+	}
+	return count ? sum / count : kJBCoreCCDefaultValues[parameter];
+}
+AutomationView automationView{};
+// EKLEN <
 
 AutomationView::AutomationView() {
 
@@ -399,6 +413,8 @@ AutomationView::AutomationView() {
 
 	probabilityChanged = false;
 	timeSelectKnobLastReleased = 0;
+	jbCoreHeldPadX = kNoSelection;
+	jbCoreHeldPadY = kNoSelection;
 }
 
 void AutomationView::initMIDICCShortcutsForAutomation() {
@@ -879,8 +895,7 @@ void AutomationView::renderAutomationOverview(ModelStackWithTimelineCounter* mod
 			}
 
 			// EKLEN - JB Core MIDI >
-			// Added three per-trigger editors beside velocity without
-			// exposing generic KIT-row CC automation.
+			// Added four per-trigger editors beside velocity without exposing generic KIT-row CC automation
 			if (outputType == OutputType::KIT && isJBCoreDrum(((Kit*)clip->output)->selectedDrum)
 			    && yDisplay == kJBCoreShortcutY && xDisplay >= kJBCoreShortcutFirstX
 			    && xDisplay < kJBCoreShortcutFirstX + kNumJBCoreCCParameters) {
@@ -1082,32 +1097,34 @@ void AutomationView::renderNoteColumn(ModelStackWithNoteRow* modelStackWithNoteR
 	if (automationParamType == AutomationParamType::NOTE_VELOCITY) {
 		value = squareInfo.averageVelocity;
 	}
-	// EKLEN - JB Core MIDI >
+	// EKLEN - JB Core MIDI
+	// Added four per-trigger editors beside velocity without exposing generic KIT-row CC automation
 	else {
 		int32_t parameter = getJBCoreParameterIndex(automationParamType);
 		if (parameter >= 0) {
 			// Core values belong to note heads rather than to a continuous AutoParam lane
 			NoteRow* noteRow = modelStackWithNoteRow->getNoteRow();
-			int32_t noteIndex = noteRow->notes.search(squareInfo.squareStartPos, GREATER_OR_EQUAL);
-			Note* note = noteRow->notes.getElement(noteIndex);
-			int32_t sum = 0;
-			int32_t count = 0;
-
-			while (note && note->pos < squareInfo.squareEndPos) {
-				sum += note->jbCoreCCValues[parameter];
-				count++;
-				note = noteRow->notes.getElement(++noteIndex);
-			}
-			if (count) {
-				value = sum / count;
-			}
+			value = getAverageJBCoreValue(noteRow, squareInfo, parameter);
 		}
 	}
-	// EKLEN <
 
 	// iterate through each square
 	for (int32_t yDisplay = 0; yDisplay < kDisplayHeight; yDisplay++) {
-		renderNoteSquare(image, occupancyMask, xDisplay, yDisplay, squareInfo.squareType, value);
+		int32_t parameter = getJBCoreParameterIndex(automationParamType);
+		if (parameter == kJBCorePanParameter) {
+			if (squareInfo.squareType == SQUARE_NO_NOTE) {
+				image[yDisplay][xDisplay] = colours::black;
+				occupancyMask[yDisplay][xDisplay] = 0;
+			}
+			else {
+				// Group D follows the native bipolar pan lane: centre 64, lower values below, higher values above.
+				renderAutomationBipolarSquare(image, occupancyMask, xDisplay, yDisplay, true,
+				                              params::Kind::UNPATCHED_GLOBAL, value);
+			}
+		}
+		else {
+			renderNoteSquare(image, occupancyMask, xDisplay, yDisplay, squareInfo.squareType, value);
+		}
 	}
 }
 
@@ -1379,15 +1396,22 @@ void AutomationView::renderNoteEditorDisplayOLED(deluge::hid::display::oled_canv
 	if (automationParamType == AutomationParamType::NOTE_VELOCITY) {
 		parameterName.append("Velocity");
 	}
-	// EKLEN - JB Core MIDI >
+	// EKLEN - JB Core MIDI
 	else {
 		int32_t parameter = getJBCoreParameterIndex(automationParamType);
 		if (parameter >= 0) {
+			// Display the actual zero-based CC mapped from the selected drum note, not the one-based parameter slot
+			int32_t ccNumber = parameter;
+			if (outputType == OutputType::KIT) {
+				Drum* drum = static_cast<Kit*>(clip->output)->selectedDrum;
+				if (isJBCoreDrum(drum)) {
+					ccNumber = static_cast<MIDIDrum*>(drum)->note * kNumJBCoreCCParameters + parameter;
+				}
+			}
 			parameterName.append("JB CC ");
-			parameterName.appendInt(parameter + 1);
+			parameterName.appendInt(ccNumber);
 		}
 	}
-	// EKLEN <
 
 #if OLED_MAIN_HEIGHT_PIXELS == 64
 	int32_t yPos = OLED_MAIN_TOPMOST_PIXEL + 12;
@@ -1462,8 +1486,10 @@ void AutomationView::renderNoteEditorDisplayOLED(deluge::hid::display::oled_canv
 		}
 		else {
 			char buffer[5];
-			int32_t defaultValue =
-			    automationParamType == AutomationParamType::NOTE_VELOCITY ? getCurrentInstrument()->defaultVelocity : 0;
+			int32_t parameter = getJBCoreParameterIndex(automationParamType);
+			int32_t defaultValue = automationParamType == AutomationParamType::NOTE_VELOCITY
+			                           ? getCurrentInstrument()->defaultVelocity
+			                           : (parameter >= 0 ? kJBCoreCCDefaultValues[parameter] : 0);
 			intToString(defaultValue, buffer);
 			canvas.drawStringCentred(buffer, yPos, kTextSpacingX, kTextSpacingY);
 		}
@@ -2618,7 +2644,7 @@ bool AutomationView::toggleAutomationPadSelectionMode(ModelStackWithAutoParam* m
 void AutomationView::handleParameterSelection(Clip* clip, Output* output, OutputType outputType, int32_t xDisplay,
                                               int32_t yDisplay) {
 	// EKLEN - JB Core MIDI >
-	// Enter one of the three per-trigger JB Core editors from temporary row-2, columns-4-to-6 shortcuts
+	// Enter one of the four per-trigger JB Core editors from temporary row-2, columns-4-to-7 shortcuts
 	if (clip->type == ClipType::INSTRUMENT && outputType == OutputType::KIT && !getAffectEntire()
 	    && yDisplay == kJBCoreShortcutY && xDisplay >= kJBCoreShortcutFirstX
 	    && xDisplay < kJBCoreShortcutFirstX + kNumJBCoreCCParameters
@@ -2779,7 +2805,7 @@ void AutomationView::noteEditPadAction(ModelStackWithNoteRow* modelStackWithNote
 	}
 }
 
-// JB Core pad edits only affect existing triggers. Unlike velocity editing, an empty column never creates a note.
+// JB Core pad edits only affect existing triggers. Unlike velocity editing, an empty column never creates a note
 void AutomationView::jbCoreEditPadAction(ModelStackWithNoteRow* modelStackWithNoteRow, NoteRow* noteRow, int32_t x,
                                          int32_t y, int32_t velocity, SquareInfo& squareInfo) {
 	int32_t parameter = getJBCoreParameterIndex(automationParamType);
@@ -2791,16 +2817,39 @@ void AutomationView::jbCoreEditPadAction(ModelStackWithNoteRow* modelStackWithNo
 		if (!squareInfo.numNotes) {
 			return;
 		}
-		recordNoteEditPadAction(x, velocity);
-		setJBCoreCC(modelStackWithNoteRow, noteRow, x, parameter,
-		            std::clamp<int32_t>(nonPatchCablePadPressValues[y], 0, kMaxMIDIValue));
+
+		int32_t currentValue = getAverageJBCoreValue(noteRow, squareInfo, parameter);
+
+		// A new value-pad press replaces any previous JB press before entering the native note-selection path. This
+		// prevents fast or overlapping value entry from being interpreted as a request to change the note length.
+		if (jbCoreHeldPadX != x || jbCoreHeldPadY != y) {
+			if (instrumentClipView.numEditPadPresses) {
+				instrumentClipView.dontDeleteNotesOnDepress();
+				instrumentClipView.endAllEditPadPresses();
+			}
+			recordNoteEditPadAction(x, velocity);
+			instrumentClipView.dontDeleteNotesOnDepress();
+			jbCoreHeldPadX = x;
+			jbCoreHeldPadY = y;
+		}
+
+		// Selecting the pad that already represents this value must not quantize the stored trigger value.
+		if (currentValue < nonPatchCableMinPadDisplayValues[y] || currentValue > nonPatchCableMaxPadDisplayValues[y]) {
+			setJBCoreCC(modelStackWithNoteRow, noteRow, x, parameter,
+			            std::clamp<int32_t>(nonPatchCablePadPressValues[y], 0, kMaxMIDIValue));
+		}
+		else {
+			renderDisplay(currentValue);
+		}
 	}
-	else {
+	else if (jbCoreHeldPadX == x && jbCoreHeldPadY == y) {
 		recordNoteEditPadAction(x, velocity);
+		jbCoreHeldPadX = kNoSelection;
+		jbCoreHeldPadY = kNoSelection;
 	}
 }
 
-// Apply one grid-entered value to every trigger represented by the pressed square, including wrap-edit copies.
+// Apply one grid-entered value to every trigger represented by the pressed square, including wrap-edit copies
 void AutomationView::setJBCoreCC(ModelStackWithNoteRow* modelStackWithNoteRow, NoteRow* noteRow, int32_t x,
                                  int32_t parameter, int32_t value) {
 	Action* action = actionLogger.getNewAction(ActionType::NOTE_EDIT, ActionAddition::ALLOWED);
@@ -5138,6 +5187,8 @@ void AutomationView::initPadSelection() {
 	if (inNoteEditor() && isUIModeActive(UI_MODE_NOTES_PRESSED)) {
 		instrumentClipView.endAllEditPadPresses();
 	}
+	jbCoreHeldPadX = kNoSelection;
+	jbCoreHeldPadY = kNoSelection;
 
 	resetPadSelectionShortcutBlinking();
 }

@@ -33,7 +33,7 @@ void Note::copyJBCoreCCValuesFrom(Note const& other) {
 
 // EKLEN - JB Core MIDI
 void Note::clearJBCoreCCValues() {
-	memset(jbCoreCCValues, 0, sizeof(jbCoreCCValues));
+	memcpy(jbCoreCCValues, kJBCoreCCDefaultValues, sizeof(jbCoreCCValues));
 }
 
 /*

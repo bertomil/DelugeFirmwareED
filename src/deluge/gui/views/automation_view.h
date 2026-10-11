@@ -199,6 +199,9 @@ private:
 	                         int32_t velocity, SquareInfo& squareInfo);
 	void setJBCoreCC(ModelStackWithNoteRow* modelStackWithNoteRow, NoteRow* noteRow, int32_t x, int32_t parameter,
 	                 int32_t value);
+	// Track the physical value pad separately so a fast replacement press cannot invoke native note-length editing.
+	int32_t jbCoreHeldPadX;
+	int32_t jbCoreHeldPadY;
 	// EKLEN <
 
 	int32_t getVelocityFromY(int32_t y);

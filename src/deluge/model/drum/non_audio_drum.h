@@ -26,7 +26,7 @@ class NonAudioDrum : public Drum, public ModControllable {
 public:
 	NonAudioDrum(DrumType newType);
 
-	bool allowNoteTails(ModelStackWithSoundFlags* modelStack, bool disregardSampleLoop = false) final;
+	bool allowNoteTails(ModelStackWithSoundFlags* modelStack, bool disregardSampleLoop = false) override;
 	bool anyNoteIsOn() final;
 	bool hasAnyVoices() final;
 	void unassignAllVoices();

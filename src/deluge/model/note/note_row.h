@@ -36,9 +36,9 @@
 #define CORRESPONDING_NOTES_SET_VELOCITY 2
 // EKLEN - JB Core MIDI
 // Contiguous operation ranges let the clip and automation views address each of
-// the three JB Core values compactly.
+// the four JB Core values compactly without overlapping the adjust and set ranges.
 #define CORRESPONDING_NOTES_ADJUST_JB_CORE_CC_0 3
-#define CORRESPONDING_NOTES_SET_JB_CORE_CC_0 6
+#define CORRESPONDING_NOTES_SET_JB_CORE_CC_0 (CORRESPONDING_NOTES_ADJUST_JB_CORE_CC_0 + kNumJBCoreCCParameters)
 
 class InstrumentClip;
 class Song;
@@ -75,7 +75,7 @@ struct PendingNoteOn {
 	uint8_t probability;
 	uint8_t velocity;
 	// EKLEN - JB Core MIDI
-	// Snapshot of the held trigger's JB Core values so conditional note-ons emit the matching CCs
+	// Snapshot of the held trigger's four JB Core values so conditional note-ons emit the matching CCs
 	uint8_t jbCoreCCValues[kNumJBCoreCCParameters];
 };
 

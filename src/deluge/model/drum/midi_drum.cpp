@@ -34,12 +34,30 @@ void MIDIDrum::noteOn(ModelStackWithThreeMainThings* modelStack, uint8_t velocit
 	state = true;
 }
 
+/**
 void MIDIDrum::noteOff(ModelStackWithThreeMainThings* modelStack, int32_t velocity) {
-	midiEngine.sendNote(this, false, note, velocity, channel, kMIDIOutputFilterNoMPE);
+    midiEngine.sendNote(this, false, note, velocity, channel, kMIDIOutputFilterNoMPE);
+    state = false;
+}
+*/
+
+// EKLEN - JB Core MIDI
+// Disable Note Off message for JB Core drums
+void MIDIDrum::noteOff(ModelStackWithThreeMainThings* modelStack, int32_t velocity) {
+	if (!isJBCoreRow()) {
+		midiEngine.sendNote(this, false, note, velocity, channel, kMIDIOutputFilterNoMPE);
+	}
+	// Internal state must still be released
 	state = false;
 }
 
-// EKLEN - JB Core MIDI >
+// EKLEN - JB Core MIDI
+// Disable Note Tails for JB Core drums, since they don't have a sample to tail off
+bool MIDIDrum::allowNoteTails(ModelStackWithSoundFlags* modelStack, bool disregardSampleLoop) {
+	return !isJBCoreRow();
+}
+
+// EKLEN - JB Core MIDI
 // Send CCs for this drum
 void MIDIDrum::sendJBCoreCCs(uint8_t const* values) {
 	if (!isJBCoreRow() || !values) {
@@ -55,7 +73,6 @@ void MIDIDrum::sendJBCoreCCs(uint8_t const* values) {
 		midiEngine.sendCC(this, channel, firstCC + parameter, values[parameter], kMIDIOutputFilterNoMPE);
 	}
 }
-// EKLEN <
 
 void MIDIDrum::unassignAllVoices() {
 	if (hasAnyVoices()) {

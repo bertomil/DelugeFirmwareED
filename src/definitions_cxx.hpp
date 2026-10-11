@@ -231,6 +231,7 @@ enum class AutomationParamType : uint8_t {
 	NOTE_JB_CORE_CC_1,
 	NOTE_JB_CORE_CC_2,
 	NOTE_JB_CORE_CC_3,
+	NOTE_JB_CORE_CC_4,
 };
 
 // BEWARE! Something in Kit loading or InstrumentClip::changeOutputType() is sensitive to output type order. There's a
@@ -686,13 +687,15 @@ constexpr int32_t kNumRealCCNumbers = 120;
 constexpr int32_t kMaxMIDIValue = 127;
 
 // EKLEN - JB Core MIDI
-// JB Core reserves displayed MIDI channel 11 for drum triggers. Each MIDI note
-// on that channel owns three consecutive CC numbers: note 0 uses CC 0-2, note 1
-// uses CC 3-5, and so on. CC 120-127 are deliberately excluded because they are
-// MIDI channel-mode messages, leaving notes 0-39 available for JB Core modules.
+// JB Core reserves displayed MIDI channel 11 and MIDI notes 0-15 for drum modules. Each note owns four consecutive
+// 7-bit CC numbers in groups A-D. JB dControl maps A-C to each module's range; D defaults to centre pan.
 constexpr uint8_t kJBCoreMIDIChannel = 10;
-constexpr uint8_t kNumJBCoreCCParameters = 3;
-constexpr uint8_t kJBCoreMaxCCNumber = 119;
+constexpr uint8_t kNumJBCoreModules = 16;
+constexpr uint8_t kJBCoreMaxNote = kNumJBCoreModules - 1;
+constexpr uint8_t kNumJBCoreCCParameters = 4;
+constexpr uint8_t kJBCorePanParameter = 3;
+constexpr uint8_t kJBCoreMaxCCNumber = kNumJBCoreModules * kNumJBCoreCCParameters - 1;
+constexpr uint8_t kJBCoreCCDefaultValues[kNumJBCoreCCParameters] = {0, 0, 0, 64};
 
 constexpr int32_t ALL_NOTES_OFF = -32768;
 enum class InstrumentRemoval {

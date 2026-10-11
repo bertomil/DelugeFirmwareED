@@ -148,10 +148,10 @@ checkResult:
 				break;
 
 			case EncoderName::TEMPO:
-				if ((getCurrentUI() == &instrumentClipView
-				     || (getCurrentUI() == &automationView && automationView.inNoteEditor()))
-				    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::Quantize)
-				           == RuntimeFeatureStateToggle::On) {
+				// EKLEN - JB Core MIDI
+				// InstrumentClipView handles quantize and intercepts group D while a JB Core trigger is held.
+				if (getCurrentUI() == &instrumentClipView
+				    || (getCurrentUI() == &automationView && automationView.inNoteEditor())) {
 					instrumentClipView.tempoEncoderAction(limitedDetentPos,
 					                                      Buttons::isButtonPressed(deluge::hid::button::TEMPO_ENC),
 					                                      Buttons::isShiftButtonPressed());

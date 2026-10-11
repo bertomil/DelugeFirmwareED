@@ -2296,9 +2296,9 @@ void InstrumentClipView::adjustVelocity(int32_t velocityChange) {
 }
 
 // EKLEN - JB Core MIDI >
-// The two modulation encoders and the vertical encoder edit the three extra
-// values while JB Core triggers are held. Values remain attached to notes, so
-// wrap editing and Automation View use the same undoable operation.
+// The two modulation encoders, vertical encoder, and tempo encoder edit the four
+// extra values while JB Core triggers are held. Values remain attached to notes,
+// so wrap editing and Automation View use the same undoable operation.
 bool InstrumentClipView::adjustJBCoreCC(int32_t parameter, int32_t valueChange) {
 	if (parameter < 0 || parameter >= kNumJBCoreCCParameters || getCurrentOutputType() != OutputType::KIT) {
 		return false;
@@ -2855,6 +2855,13 @@ void InstrumentClipView::recalculateColour(uint8_t yDisplay) {
 	iterateAndCallSpecificDeviceHook(MIDIDeviceUSBHosted::Hook::HOOK_ON_RECALCULATE_COLOUR);
 }
 
+// EKLEN - JB Core MIDI
+// Identify channel-11 MIDI rows whose note and CC mapping must not be changed by vertical row movement
+static bool isJBCoreNoteRow(NoteRow* noteRow) {
+	return noteRow && noteRow->drum && noteRow->drum->type == DrumType::MIDI
+	       && static_cast<MIDIDrum*>(noteRow->drum)->isJBCoreRow();
+}
+
 ActionResult InstrumentClipView::scrollVertical(int32_t scrollAmount, bool inCardRoutine, bool draggingNoteRow) {
 	int32_t noteRowToShiftI;
 	int32_t noteRowToSwapWithI;
@@ -2863,6 +2870,18 @@ ActionResult InstrumentClipView::scrollVertical(int32_t scrollAmount, bool inCar
 
 	// If a Kit...
 	if (isKit) {
+		// EKLEN - JB Core MIDI
+		// Held notes normally move to another row during vertical scrolling. Keep JB triggers on their channel-11 row.
+		if (numEditPadPresses) {
+			for (int32_t i = 0; i < kEditPadPressBufferSize; i++) {
+				if (editPadPresses[i].isActive
+				    && isJBCoreNoteRow(
+				        getCurrentInstrumentClip()->getNoteRowOnScreen(editPadPresses[i].yDisplay, currentSong))) {
+					return ActionResult::DEALT_WITH;
+				}
+			}
+		}
+
 		// Limit scrolling
 		if (scrollAmount >= 0) {
 			if ((int16_t)(getCurrentInstrumentClip()->yScroll + scrollAmount)
@@ -2880,6 +2899,12 @@ ActionResult InstrumentClipView::scrollVertical(int32_t scrollAmount, bool inCar
 		if (draggingNoteRow) {
 			noteRowToShiftI = lastAuditionedYDisplay + getCurrentInstrumentClip()->yScroll;
 			if (noteRowToShiftI < 0 || noteRowToShiftI >= getCurrentInstrumentClip()->noteRows.getNumElements()) {
+				return ActionResult::DEALT_WITH;
+			}
+
+			// EKLEN - JB Core MIDI
+			// Prevent the native KIT row-drag gesture from reordering a channel-11 JB Core row.
+			if (isJBCoreNoteRow(getCurrentInstrumentClip()->noteRows.getElement(noteRowToShiftI))) {
 				return ActionResult::DEALT_WITH;
 			}
 
@@ -5008,6 +5033,12 @@ void InstrumentClipView::rotateNoteRowHorizontally(int32_t offset) {
 }
 
 void InstrumentClipView::tempoEncoderAction(int8_t offset, bool encoderButtonPressed, bool shiftButtonPressed) {
+	// EKLEN - JB Core MIDI
+	// Edit group D only while a JB Core trigger is held, so the same turn cannot change the global tempo.
+	if (isUIModeActiveExclusively(UI_MODE_NOTES_PRESSED) && adjustJBCoreCC(kJBCorePanParameter, offset)) {
+		return;
+	}
+
 	auto quantizeType = encoderButtonPressed ? NudgeMode::QUANTIZE_ALL : NudgeMode::QUANTIZE;
 	if (isUIModeActive(UI_MODE_QUANTIZE)) {
 		commandQuantizeNotes(offset, quantizeType);
