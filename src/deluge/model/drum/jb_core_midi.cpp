@@ -48,6 +48,7 @@ enum class ParameterDisplayType : uint8_t {
 
 struct ParameterInfo {
 	char const* name;
+	uint8_t editorMinValue;
 	uint8_t editorMaxValue;
 	ParameterDisplayType displayType;
 };
@@ -55,10 +56,10 @@ struct ParameterInfo {
 // Every JB Core drum repeats this A-D topology across its four consecutive CCs
 // These limits apply only to GUI editing; the stored and transmitted MIDI values remain 0-127
 constexpr std::array<ParameterInfo, 4> kJBCoreParameters = {{
-    {"Tune", 12, ParameterDisplayType::SEMITONES},
-    {"Tone", 8, ParameterDisplayType::NUMBER},
-    {"Decay", 8, ParameterDisplayType::NUMBER},
-    {"Pan", 127, ParameterDisplayType::PAN},
+    {"Tune", 0, 12, ParameterDisplayType::SEMITONES},
+    {"Tone", 0, 7, ParameterDisplayType::NUMBER},
+    {"Decay", 0, 7, ParameterDisplayType::NUMBER},
+    {"Pan", 0, 127, ParameterDisplayType::PAN},
 }};
 
 } // namespace
@@ -91,7 +92,8 @@ int32_t clampEditorValue(uint8_t parameter, int32_t value) {
 		return value;
 	}
 
-	return std::clamp<int32_t>(value, 0, kJBCoreParameters[parameter].editorMaxValue);
+	return std::clamp<int32_t>(value, kJBCoreParameters[parameter].editorMinValue,
+	                           kJBCoreParameters[parameter].editorMaxValue);
 }
 
 void formatDisplayValue(uint8_t parameter, uint8_t value, char* buffer) {
@@ -120,7 +122,8 @@ void formatDisplayValue(uint8_t parameter, uint8_t value, char* buffer) {
 		break;
 
 	case ParameterDisplayType::NUMBER:
-		intToString(value, buffer, 1);
+		// Tone and Decay use raw mux selections S0-S7, displayed to the user as positions 1-8.
+		intToString(value + 1, buffer, 1);
 		break;
 	}
 }
