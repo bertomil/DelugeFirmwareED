@@ -4834,10 +4834,9 @@ ActionResult InstrumentClipView::verticalEncoderAction(int32_t offset, bool inCa
 	}
 
 	// EKLEN - JB Core MIDI >
-	// With a JB Core trigger held, the otherwise scrolling vertical encoder
-	// becomes parameter three.
+	// With a JB Core trigger held, use the detented vertical encoder for Tune.
 	if (!Buttons::isButtonPressed(deluge::hid::button::Y_ENC) && !Buttons::isShiftButtonPressed()
-	    && isUIModeActiveExclusively(UI_MODE_NOTES_PRESSED) && adjustJBCoreCC(2, offset)) {
+	    && isUIModeActiveExclusively(UI_MODE_NOTES_PRESSED) && adjustJBCoreCC(0, offset)) {
 		return ActionResult::DEALT_WITH;
 	}
 	// EKLEN <
@@ -5892,10 +5891,10 @@ void InstrumentClipView::modEncoderAction(int32_t whichModEncoder, int32_t offse
 	dontDeleteNotesOnDepress();
 
 	// EKLEN - JB Core MIDI >
-	// Both modulation encoders are free while a trigger is held, so use them for
-	// JB Core parameters one and two.
+	// Match the dControl layout while a trigger is held: lower gold edits Tone
+	// and upper gold edits Decay (whichModEncoder is 0 for lower and 1 for upper).
 	if (whichModEncoder < 2 && isUIModeActiveExclusively(UI_MODE_NOTES_PRESSED)
-		&& adjustJBCoreCC(whichModEncoder, offset)) {
+		&& adjustJBCoreCC(whichModEncoder + 1, offset)) {
 		return;
 	}
 	// EKLEN <
