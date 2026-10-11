@@ -60,6 +60,7 @@
 #include "model/consequence/consequence_note_row_length.h"
 #include "model/consequence/consequence_note_row_mute.h"
 #include "model/drum/drum.h"
+#include "model/drum/jb_core_midi.h"
 #include "model/drum/midi_drum.h"
 #include "model/instrument/kit.h"
 #include "model/instrument/melodic_instrument.h"
@@ -413,8 +414,8 @@ AutomationView::AutomationView() {
 
 	probabilityChanged = false;
 	timeSelectKnobLastReleased = 0;
-	jbCoreHeldPadX = kNoSelection;
-	jbCoreHeldPadY = kNoSelection;
+	jbCoreHeldPadX = kNoSelection; // EKLEN - JB Core MIDI
+	jbCoreHeldPadY = kNoSelection; // EKLEN -/-
 }
 
 void AutomationView::initMIDICCShortcutsForAutomation() {
@@ -896,7 +897,8 @@ void AutomationView::renderAutomationOverview(ModelStackWithTimelineCounter* mod
 
 			// EKLEN - JB Core MIDI >
 			// Added four per-trigger editors beside velocity without exposing generic KIT-row CC automation
-			if (outputType == OutputType::KIT && isJBCoreDrum(((Kit*)clip->output)->selectedDrum)
+			if (jb_core::kAutomationViewEnabled && outputType == OutputType::KIT
+			    && isJBCoreDrum(((Kit*)clip->output)->selectedDrum)
 			    && yDisplay == kJBCoreShortcutY && xDisplay >= kJBCoreShortcutFirstX
 			    && xDisplay < kJBCoreShortcutFirstX + kNumJBCoreCCParameters) {
 				pixel = colours::grey;
@@ -1110,6 +1112,7 @@ void AutomationView::renderNoteColumn(ModelStackWithNoteRow* modelStackWithNoteR
 
 	// iterate through each square
 	for (int32_t yDisplay = 0; yDisplay < kDisplayHeight; yDisplay++) {
+		// EKLEN - JB Core MIDI
 		int32_t parameter = getJBCoreParameterIndex(automationParamType);
 		if (parameter == kJBCorePanParameter) {
 			if (squareInfo.squareType == SQUARE_NO_NOTE) {
@@ -1400,16 +1403,8 @@ void AutomationView::renderNoteEditorDisplayOLED(deluge::hid::display::oled_canv
 	else {
 		int32_t parameter = getJBCoreParameterIndex(automationParamType);
 		if (parameter >= 0) {
-			// Display the actual zero-based CC mapped from the selected drum note, not the one-based parameter slot
-			int32_t ccNumber = parameter;
-			if (outputType == OutputType::KIT) {
-				Drum* drum = static_cast<Kit*>(clip->output)->selectedDrum;
-				if (isJBCoreDrum(drum)) {
-					ccNumber = static_cast<MIDIDrum*>(drum)->note * kNumJBCoreCCParameters + parameter;
-				}
-			}
-			parameterName.append("JB CC ");
-			parameterName.appendInt(ccNumber);
+			// Show the target parameter shared by this position in every four-CC drum group
+			parameterName.append(jb_core::getParameterName(parameter));
 		}
 	}
 
@@ -1443,6 +1438,14 @@ void AutomationView::renderNoteEditorDisplayOLED(deluge::hid::display::oled_canv
 			DEF_STACK_STRING_BUF(drumName, 50);
 			instrumentClipView.getDrumName(modelStackWithNoteRow->getNoteRow()->drum, drumName);
 			strncpy(noteRowName, drumName.c_str(), 49);
+			// EKLEN - JB Core MIDI
+			// Drum names use newlines on the audition popup, but automation displays them on one line
+			noteRowName[49] = '\0';
+			for (char* character = noteRowName; *character; character++) {
+				if (*character == '\n') {
+					*character = ' ';
+				}
+			}
 		}
 		else {
 			int32_t isNatural = 1; // gets modified inside noteCodeToString to be 0 if sharp.
@@ -1463,7 +1466,7 @@ void AutomationView::renderNoteEditorDisplayOLED(deluge::hid::display::oled_canv
 	// display parameter value
 	yPos = yPos + 12;
 
-	if (inNoteEditor()) {
+	if (inNoteEditor()) { // EKLEN - JB Core MIDI
 		if (knobPosRight != kNoSelection) {
 			char bufferLeft[10];
 			bufferLeft[0] = 'L';
@@ -1486,6 +1489,7 @@ void AutomationView::renderNoteEditorDisplayOLED(deluge::hid::display::oled_canv
 		}
 		else {
 			char buffer[5];
+			// EKLEN - JB Core MIDI
 			int32_t parameter = getJBCoreParameterIndex(automationParamType);
 			int32_t defaultValue = automationParamType == AutomationParamType::NOTE_VELOCITY
 			                           ? getCurrentInstrument()->defaultVelocity
@@ -1627,6 +1631,14 @@ void AutomationView::renderNoteEditorDisplay7SEG(InstrumentClip* clip, OutputTyp
 				DEF_STACK_STRING_BUF(drumName, 50);
 				instrumentClipView.getDrumName(modelStackWithNoteRow->getNoteRow()->drum, drumName);
 				strncpy(noteRowName, drumName.c_str(), 49);
+				// EKLEN - JB Core MIDI
+				// Drum names use newlines on the audition popup, but automation displays them on one line
+				noteRowName[49] = '\0';
+				for (char* character = noteRowName; *character; character++) {
+					if (*character == '\n') {
+						*character = ' ';
+					}
+				}
 			}
 			else {
 				int32_t isNatural = 1; // gets modified inside noteCodeToString to be 0 if sharp.
@@ -2649,6 +2661,11 @@ void AutomationView::handleParameterSelection(Clip* clip, Output* output, Output
 	    && yDisplay == kJBCoreShortcutY && xDisplay >= kJBCoreShortcutFirstX
 	    && xDisplay < kJBCoreShortcutFirstX + kNumJBCoreCCParameters
 	    && isJBCoreDrum(static_cast<Kit*>(output)->selectedDrum)) {
+		// Consume disabled JB shortcuts so they cannot fall through to native parameter mappings.
+		if (!jb_core::kAutomationViewEnabled) {
+			return;
+		}
+
 		potentiallyVerticalScrollToSelectedDrum(static_cast<InstrumentClip*>(clip), output);
 		initParameterSelection(false);
 		automationParamType = static_cast<AutomationParamType>(
@@ -5187,8 +5204,8 @@ void AutomationView::initPadSelection() {
 	if (inNoteEditor() && isUIModeActive(UI_MODE_NOTES_PRESSED)) {
 		instrumentClipView.endAllEditPadPresses();
 	}
-	jbCoreHeldPadX = kNoSelection;
-	jbCoreHeldPadY = kNoSelection;
+	jbCoreHeldPadX = kNoSelection; // EKLEN - JB Core MIDI
+	jbCoreHeldPadY = kNoSelection; // EKLEN -/-
 
 	resetPadSelectionShortcutBlinking();
 }
@@ -5827,7 +5844,7 @@ void AutomationView::setAutomationParamType() {
 	automationParamType = AutomationParamType::PER_SOUND;
 	if (!inAutomationEditor()) {
 		Clip* clip = getCurrentClip();
-		if (clip->type == ClipType::INSTRUMENT && (clip->lastSelectedParamShortcutX == kVelocityShortcutX)
+		if (clip->type == ClipType::INSTRUMENT && (clip->lastSelectedParamShortcutX == kVelocityShortcutX) // EKLEN - JB Core MIDI
 		    && (clip->lastSelectedParamShortcutY == kVelocityShortcutY)) {
 			automationParamType = AutomationParamType::NOTE_VELOCITY;
 		}
@@ -5837,9 +5854,16 @@ void AutomationView::setAutomationParamType() {
 		         && clip->lastSelectedParamShortcutY == kJBCoreShortcutY
 		         && clip->lastSelectedParamShortcutX >= kJBCoreShortcutFirstX
 		         && clip->lastSelectedParamShortcutX < kJBCoreShortcutFirstX + kNumJBCoreCCParameters) {
-			automationParamType =
-			    static_cast<AutomationParamType>(static_cast<int32_t>(AutomationParamType::NOTE_JB_CORE_CC_1)
-			                                     + clip->lastSelectedParamShortcutX - kJBCoreShortcutFirstX);
+			if (jb_core::kAutomationViewEnabled) {
+				automationParamType =
+				    static_cast<AutomationParamType>(static_cast<int32_t>(AutomationParamType::NOTE_JB_CORE_CC_1)
+				                                     + clip->lastSelectedParamShortcutX - kJBCoreShortcutFirstX);
+			}
+			else {
+				// Forget a previously saved JB editor so its disabled shortcut does not keep blinking.
+				clip->lastSelectedParamShortcutX = kNoSelection;
+				clip->lastSelectedParamShortcutY = kNoSelection;
+			}
 		}
 		// EKLEN <
 	}

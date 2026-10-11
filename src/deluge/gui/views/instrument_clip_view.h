@@ -90,6 +90,7 @@ public:
 	ActionResult commandExitScaleMode();
 	/// Change current root note. AUDITION + SCALE or SCALE + AUDITION in scale mod.
 	ActionResult commandChangeRootNote(uint8_t yDisplay);
+
 	uint8_t getEditPadPressXDisplayOnScreen(uint8_t yDisplay);
 	void editPadAction(bool state, uint8_t yDisplay, uint8_t xDisplay, uint32_t xZoom);
 	void adjustVelocity(int32_t velocityChange);

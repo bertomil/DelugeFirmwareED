@@ -62,6 +62,7 @@
 #include "model/consequence/consequence_note_row_mute.h"
 #include "model/drum/drum.h"
 #include "model/drum/midi_drum.h"
+#include "model/drum/jb_core_midi.h" // EKLEN - JB Core MIDI
 #include "model/instrument/kit.h"
 #include "model/instrument/melodic_instrument.h"
 #include "model/instrument/non_audio_instrument.h"
@@ -2298,7 +2299,7 @@ void InstrumentClipView::adjustVelocity(int32_t velocityChange) {
 // EKLEN - JB Core MIDI >
 // The two modulation encoders, vertical encoder, and tempo encoder edit the four
 // extra values while JB Core triggers are held. Values remain attached to notes,
-// so wrap editing and Automation View use the same undoable operation.
+// so wrap editing and Automation View use the same undoable operation
 bool InstrumentClipView::adjustJBCoreCC(int32_t parameter, int32_t valueChange) {
 	if (parameter < 0 || parameter >= kNumJBCoreCCParameters || getCurrentOutputType() != OutputType::KIT) {
 		return false;
@@ -2309,7 +2310,6 @@ bool InstrumentClipView::adjustJBCoreCC(int32_t parameter, int32_t valueChange) 
 	Action* action = nullptr;
 	bool handled = false;
 	int32_t displayedValue = -1;
-	int32_t displayedCC = -1;
 
 	for (int32_t i = 0; i < kEditPadPressBufferSize; i++) {
 		if (!editPadPresses[i].isActive) {
@@ -2345,8 +2345,12 @@ bool InstrumentClipView::adjustJBCoreCC(int32_t parameter, int32_t valueChange) 
 		int32_t endPos =
 		    editPadPresses[i].intendedPos + (editPadPresses[i].isBlurredSquare ? editPadPresses[i].intendedLength : 1);
 		while (note && note->pos < endPos) {
+			// Restrict held-trigger editing to the target module's GUI range while
+			// leaving the underlying note value and MIDI CC format at 0-127.
+			int32_t newValue =
+			    jb_core::clampEditorValue(parameter, note->jbCoreCCValues[parameter] + valueChange);
 			noteRow->changeNotesAcrossAllScreens(note->pos, modelStackWithNoteRow, action,
-			                                     CORRESPONDING_NOTES_ADJUST_JB_CORE_CC_0 + parameter, valueChange);
+			                                     CORRESPONDING_NOTES_SET_JB_CORE_CC_0 + parameter, newValue);
 
 			int32_t value = note->jbCoreCCValues[parameter];
 			if (displayedValue < 0) {
@@ -2362,7 +2366,6 @@ bool InstrumentClipView::adjustJBCoreCC(int32_t parameter, int32_t valueChange) 
 			}
 			note = noteRow->notes.getElement(++noteIndex);
 		}
-		displayedCC = midiDrum->note * kNumJBCoreCCParameters + parameter;
 	}
 
 	if (handled) {
@@ -2370,11 +2373,12 @@ bool InstrumentClipView::adjustJBCoreCC(int32_t parameter, int32_t valueChange) 
 		uiNeedsRendering(this, 0xFFFFFFFF, 0);
 
 		char buffer[32];
-		strcpy(buffer, "CC ");
-		intToString(displayedCC, buffer + strlen(buffer));
+		// Display the fixed JB Core target name instead of its underlying MIDI CC number
+		strcpy(buffer, jb_core::getParameterName(parameter));
 		strcat(buffer, displayedValue == 255 ? ": multiple" : ": ");
 		if (displayedValue != 255) {
-			intToString(displayedValue < 0 ? 0 : displayedValue, buffer + strlen(buffer));
+			jb_core::formatDisplayValue(parameter, displayedValue < 0 ? 0 : displayedValue,
+			                            buffer + strlen(buffer));
 		}
 		if (display->haveOLED()) {
 			display->popupText(buffer);
@@ -4331,6 +4335,18 @@ void InstrumentClipView::getDrumName(Drum* drum, StringBuf& drumName) {
 				drumName.appendInt(((GateDrum*)drum)->channel + 1);
 			}
 			else { // MIDI
+				// EKLEN - JB Core MIDI >
+				MIDIDrum* midiDrum = static_cast<MIDIDrum*>(drum);
+				if (midiDrum->channel == kJBCoreMIDIChannel) {
+					jb_core::DrumInfo info = jb_core::getDrumInfo(midiDrum->note);
+					if (info) {
+						drumName.append(info.groupName);
+						drumName.append("\n");
+						drumName.append(info.voiceName);
+						return;
+					}
+				}
+				// EKLEN <
 				drumName.append("CH: ");
 				drumName.appendInt(((MIDIDrum*)drum)->channel + 1);
 				drumName.append(" N#: ");
@@ -5879,7 +5895,7 @@ void InstrumentClipView::modEncoderAction(int32_t whichModEncoder, int32_t offse
 	// Both modulation encoders are free while a trigger is held, so use them for
 	// JB Core parameters one and two.
 	if (whichModEncoder < 2 && isUIModeActiveExclusively(UI_MODE_NOTES_PRESSED)
-	    && adjustJBCoreCC(whichModEncoder, offset)) {
+		&& adjustJBCoreCC(whichModEncoder, offset)) {
 		return;
 	}
 	// EKLEN <
@@ -6013,9 +6029,7 @@ justDisplayOldNumNotes:
 						note->probability = noteRow->getDefaultProbability(modelStack);
 						note->velocity = ((Instrument*)clip->output)->defaultVelocity;
 						note->lift = kDefaultLiftValue;
-						// EKLEN - JB Core MIDI >
-						note->clearJBCoreCCValues();
-						// EKLEN <
+						note->clearJBCoreCCValues(); // EKLEN - JB Core MIDI
 					}
 
 					// Just make sure final note isn't too long
